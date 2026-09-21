@@ -9,7 +9,7 @@
     "test": "node test/health.test.js"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "20.x"
   },
   "keywords": [
     "knotnex",
