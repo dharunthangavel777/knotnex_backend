@@ -1,24 +1,28 @@
-# Use official Node.js 20 LTS slim image
-FROM node:20-slim
+FROM node:20-alpine AS builder
 
-# Create and change to the app directory
 WORKDIR /usr/src/app
 
-# Copy package manifests
 COPY package*.json ./
+RUN npm ci
 
-# Install production dependencies
-RUN npm ci --omit=dev
+COPY tsconfig.json ./
+COPY src/ ./src/
 
-# Copy application source code
-COPY . .
+RUN npm run build
 
-# Set default environment variables
+# ─── Production Runner ───
+FROM node:20-alpine AS runner
+
+WORKDIR /usr/src/app
+
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Cloud Run binds to PORT (default 8080)
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY --from=builder /usr/src/app/dist ./dist
+
 EXPOSE 8080
 
-# Start server
-CMD ["node", "src/server.js"]
+CMD ["node", "dist/server.js"]

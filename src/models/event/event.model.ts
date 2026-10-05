@@ -1,0 +1,40 @@
+import { BaseModel } from '../common/base.model';
+import { EventType, EventStatus } from '../../types/enums';
+
+export interface EventModel extends BaseModel {
+  orgId: string;
+  createdBy?: string;
+  title: string;
+  slug: string;
+  category: string;
+  type: EventType;
+  coverUrl?: string;
+  shortDescription?: string;
+  detailedDescription?: string;
+  language: string;
+  eventDate: string;
+  startTime?: string;
+  endTime?: string;
+  timezone: string;
+  registrationOpens?: Date;
+  registrationDeadline?: Date;
+  venueName?: string;
+  address?: string;
+  district?: string;
+  state?: string;
+  googleMapsLink?: string;
+  meetingPlatform?: string;
+  meetingLink?: string;
+  wheelchairAccessible: boolean;
+  signLanguage: boolean;
+  brailleMaterial: boolean;
+  capacity?: number;
+  registeredCount: number;
+  isFree: boolean;
+  ticketPrice: number;
+  status: EventStatus;
+  eligibility: string[];
+  sponsors: Array<{ name: string; logoUrl?: string }>;
+  gallery: string[];
+  contactEmail?: string;
+}

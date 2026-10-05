@@ -1,87 +1,75 @@
-# Knotnex Backend Service
+# 🚀 Knotnex Platform Backend API
 
-Node.js & Express backend for Knotnex.
-
-## Features
-- **Express 4.x** with security headers ([`helmet`](https://helmetjs.github.io/)) and configurable **CORS**.
-- **HTTP Request Logger** using `morgan`.
-- **Health Check Endpoint** with system metrics (uptime, memory, platform) and mocked dependencies (database, cache, auth).
-- **Mock Testing Endpoint** supporting scenario simulation (`down`, `degraded`, latency injection).
-- **Graceful Shutdown** and unhandled rejection/exception management.
+Production-ready backend API service for the **Knotnex Platform**, serving all 3 client applications:
+1. 📱 **knotnex** (Flutter Mobile — Specially-abled individuals / Users)
+2. 🖥️ **knotnex_org** (React + Vite Web — NGO & Corporate Organizations)
+3. 🖥️ **knotnex_admin** (Flutter Web — Platform Operations & Moderation)
 
 ---
 
-## Getting Started
+## 🏛️ Architecture Overview
+
+- **Language / Framework**: Node.js 20+ with Express & TypeScript
+- **Primary Database**: PostgreSQL 15 (Cloud SQL) for relational data, queries, analytics, and ACID compliance
+- **Real-Time Database**: Google Cloud Firestore for chat messages, active presence, and typing indicators
+- **Cache & Rate Limiting**: Memorystore Redis (or standalone Redis for local development)
+- **Identity & Auth**: Firebase Auth with Custom Claims (`role`, `orgId`, `verified`)
+- **Push Notifications**: Firebase Cloud Messaging (FCM)
+- **Object Storage**: Google Cloud Storage (Media & Private buckets)
+- **Hosting & Compute**: GCP Cloud Run (Serverless container deployment)
+
+---
+
+## 📁 Project Structure
+
+```
+knotnex_backend/
+├── src/
+│   ├── config/            # PostgreSQL, Redis, Firebase, GCP, Logger, CORS configs
+│   ├── types/             # Enums, interfaces, and Express request types
+│   ├── utils/             # API responses, pagination, crypto, sanitize helpers
+│   ├── middleware/        # Auth, role check, rate limiting, error handling, upload
+│   ├── validators/        # Zod request validation schemas
+│   ├── models/            # PostgreSQL & Firestore data models (User, Event, Job, Scheme, Post, etc.)
+│   ├── integrations/      # Firebase, Twilio, SendGrid, Cloud Storage, PubSub, QR
+│   ├── services/          # Core domain business logic
+│   ├── controllers/       # HTTP Request/Response controllers
+│   ├── routes/            # Express route definitions (prefixed with /api/v1)
+│   ├── websockets/        # Socket.IO handlers for chat, presence, typing
+│   ├── db/                # SQL migrations & seed scripts
+│   ├── app.ts             # Express application configuration
+│   └── server.ts          # Server initialization and shutdown listeners
+├── scripts/               # Migration runner, seed runner, Firestore initializer
+├── Dockerfile             # Multi-stage production container
+└── docker-compose.yml     # Local environment (PostgreSQL + Redis + API)
+```
+
+---
+
+## 🛠️ Local Development Setup
 
 ### 1. Environment Variables
-Copy `.env.example` to `.env` (already initialized with defaults):
-```env
-PORT=5000
-NODE_ENV=development
-CORS_ORIGIN=*
-```
-
-### 2. Run the Server
-- **Production mode**:
-  ```bash
-  npm start
-  ```
-- **Development mode (auto-reload)**:
-  ```bash
-  npm run dev
-  ```
-
-### 3. Run Automated Tests
+Copy the template and verify settings:
 ```bash
-npm test
+cp .env.example .env
 ```
 
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/` | API status and links to health endpoints |
-| `GET` | `/api/health` (or `/health`) | System health metrics & mock service states |
-| `GET` | `/api/health/mock` | Mock testing endpoint |
-| `GET` | `/api/health/mock?status=down` | Simulates a 503 service outage |
-| `GET` | `/api/health/mock?status=degraded` | Simulates high latency / degraded state |
-| `GET` | `/api/health/mock?delay=1000` | Injects simulated network delay (ms) |
-
-### Sample Response (`GET /api/health`):
-```json
-{
-  "status": "ok",
-  "service": "knotnex-backend",
-  "version": "1.0.0",
-  "timestamp": "2026-09-19T08:05:00.000Z",
-  "uptime": "0h 1m 20s",
-  "uptimeSeconds": 80,
-  "environment": "development",
-  "system": {
-    "platform": "win32",
-    "nodeVersion": "v22.19.0",
-    "memoryUsage": {
-      "rss": "38 MB",
-      "heapUsed": "12 MB"
-    }
-  },
-  "dependencies": {
-    "database": {
-      "name": "MongoDB",
-      "status": "healthy (mocked)",
-      "latency": "2ms"
-    },
-    "cache": {
-      "name": "Redis",
-      "status": "healthy (mocked)",
-      "latency": "1ms"
-    },
-    "authService": {
-      "name": "JWT Auth",
-      "status": "operational (mocked)"
-    }
-  }
-}
+### 2. Run with Docker Compose
+Start PostgreSQL and Redis locally:
+```bash
+docker-compose up -d postgres redis
 ```
+
+### 3. Install & Migrate
+```bash
+npm install
+npm run db:migrate
+npm run db:seed
+```
+
+### 4. Start Development Server
+```bash
+npm run dev
+```
+The server will start listening at `http://localhost:8080/api/v1`.
+Health check: `http://localhost:8080/api/v1/health`
