@@ -31,12 +31,28 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // HTTP logging
 app.use(requestLogger);
 
+import path from 'path';
+
+// Serve uploaded static files
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
 // Rate limiting on API routes
 app.use('/api', apiRateLimiter);
 
 // Master API routes mounted at /api/v1 and /api
 app.use('/api/v1', masterRouter);
 app.use('/api', masterRouter);
+
+// Root health check endpoint for Cloud Run and load balancers
+app.get('/', (req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'knotnex-api',
+    version: 'v1',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // 404 Handler for undefined routes
 app.use((req: Request, res: Response) => {

@@ -87,6 +87,7 @@ export enum SchemeApplicationStatus {
 export enum PostType {
   POST = 'post',
   REEL = 'reel',
+  WRITE = 'write',
 }
 
 export enum TicketStatus {

@@ -78,10 +78,26 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     }
 
     // Lookup user in PostgreSQL by Firebase UID
-    const userRes = await query(
+    let userRes = await query(
       'SELECT id, firebase_uid, email, role, is_verified, is_banned FROM users WHERE firebase_uid = $1 LIMIT 1',
       [decodedToken.uid]
     );
+
+    if (!userRes.rowCount || userRes.rowCount === 0) {
+      if (decodedToken.email) {
+        userRes = await query(
+          'SELECT id, firebase_uid, email, role, is_verified, is_banned FROM users WHERE email = $1 LIMIT 1',
+          [decodedToken.email]
+        );
+        if (userRes.rowCount && userRes.rowCount > 0) {
+          // Link firebase_uid to Postgres user
+          await query('UPDATE users SET firebase_uid = $1 WHERE id = $2', [
+            decodedToken.uid,
+            userRes.rows[0].id,
+          ]);
+        }
+      }
+    }
 
     if (!userRes.rowCount || userRes.rowCount === 0) {
       // Firebase user not yet in PostgreSQL (rare, during signup flow)

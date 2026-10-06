@@ -8,7 +8,14 @@ let firebaseApp: admin.app.App;
 
 try {
   const keyPath = path.resolve(process.cwd(), config.firebase.serviceAccountKey);
-  if (fs.existsSync(keyPath)) {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    firebaseApp = admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      projectId: config.firebase.projectId,
+    });
+    logger.info('Firebase Admin SDK initialized from FIREBASE_SERVICE_ACCOUNT_JSON env variable');
+  } else if (fs.existsSync(keyPath)) {
     const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
     firebaseApp = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),

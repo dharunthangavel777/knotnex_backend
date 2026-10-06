@@ -77,7 +77,9 @@ export class PostService {
       ]
     );
 
-    return res.rows[0];
+    const createdId = res.rows[0].id;
+    const hydrated = await PostService.getPostById(createdId, authorId);
+    return hydrated || res.rows[0];
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -462,9 +464,32 @@ export class PostService {
     const { page, limit, offset } = getPagination(params);
     const safeViewer = viewerId || FALLBACK_UUID;
 
+    let targetAuthorId = profileUserId;
+
+    // Support 'me' alias
+    if (profileUserId === 'me' || !profileUserId) {
+      if (viewerId && viewerId !== FALLBACK_UUID) {
+        targetAuthorId = viewerId;
+      }
+    }
+
+    // If targetAuthorId is not a UUID, attempt resolving via firebase_uid or email
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(targetAuthorId)) {
+      const uRes = await query(
+        `SELECT id FROM users WHERE firebase_uid = $1 OR email = $1 LIMIT 1`,
+        [targetAuthorId]
+      );
+      if (uRes.rowCount && uRes.rows[0]) {
+        targetAuthorId = uRes.rows[0].id;
+      } else {
+        return buildPaginatedResult([], 0, page, limit);
+      }
+    }
+
     const countRes = await query(
       `SELECT COUNT(*) FROM posts WHERE author_id=$1 AND is_moderated=false`,
-      [profileUserId]
+      [targetAuthorId]
     );
     const total = parseInt(countRes.rows[0].count, 10);
 
@@ -473,7 +498,7 @@ export class PostService {
        WHERE p.author_id=$1 AND p.is_moderated=false
        ORDER BY p.created_at DESC
        LIMIT $2 OFFSET $3`,
-      [profileUserId, limit, offset]
+      [targetAuthorId, limit, offset]
     );
 
     return buildPaginatedResult(res.rows, total, page, limit);

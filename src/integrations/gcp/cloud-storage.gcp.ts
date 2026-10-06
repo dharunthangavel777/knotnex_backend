@@ -49,6 +49,38 @@ export class CloudStorageIntegration {
     }
   }
 
+  static async generateSignedUploadUrl(
+    destinationPath: string,
+    contentType: string,
+    isPublic: boolean = true,
+    expiresInMinutes: number = 15
+  ): Promise<{ uploadUrl: string; publicUrl: string; destinationPath: string }> {
+    try {
+      const bucket = isPublic ? mediaBucket : privateBucket;
+      const file = bucket.file(destinationPath);
+
+      const [uploadUrl] = await file.getSignedUrl({
+        version: 'v4',
+        action: 'write',
+        expires: Date.now() + expiresInMinutes * 60 * 1000,
+        contentType,
+      });
+
+      const publicUrl = isPublic
+        ? `https://storage.googleapis.com/${bucket.name}/${destinationPath}`
+        : `gs://${bucket.name}/${destinationPath}`;
+
+      return {
+        uploadUrl,
+        publicUrl,
+        destinationPath,
+      };
+    } catch (error: any) {
+      logger.error('Failed to generate signed upload URL', { destinationPath, contentType, error: error.message });
+      throw error;
+    }
+  }
+
   static async deleteFile(filePath: string, isPublic: boolean = true): Promise<void> {
     try {
       const bucket = isPublic ? mediaBucket : privateBucket;
