@@ -2,10 +2,20 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
-  env: process.env.NODE_ENV || 'development',
+  env: process.env.APP_ENV || process.env.NODE_ENV || 'development',
+  isProduction: (process.env.APP_ENV || process.env.NODE_ENV) === 'production',
   port: parseInt(process.env.PORT || '8080', 10),
   apiVersion: process.env.API_VERSION || 'v1',
-  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:5173,http://localhost:8080').split(','),
+  corsOrigins: (process.env.CORS_ORIGINS || [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:8080',
+    'https://knotnex-backend-445162659573.europe-west1.run.app',
+    'https://knotnex-backend-3wp4fzkfna-ew.a.run.app',
+    'https://knotnex.com',
+    'https://org.knotnex.com',
+    'https://api.knotnex.com',
+  ].join(',')).split(',').map((s) => s.trim()),
 
   database: {
     url: process.env.DATABASE_URL || 'postgresql://knotnex_user:knotnex_password@localhost:5432/knotnex_db',

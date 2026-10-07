@@ -43,11 +43,14 @@ app.use('/api', apiRateLimiter);
 app.use('/api/v1', masterRouter);
 app.use('/api', masterRouter);
 
+import { config } from './config';
+
 // Root health check endpoint for Cloud Run and load balancers
-app.get('/', (req: Request, res: Response) => {
+app.get(['/', '/health'], (req: Request, res: Response) => {
   res.status(200).json({
     status: 'ok',
     service: 'knotnex-api',
+    environment: config.env,
     version: 'v1',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
