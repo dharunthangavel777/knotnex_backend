@@ -18,7 +18,7 @@ export const config = {
   ].join(',')).split(',').map((s) => s.trim()),
 
   database: {
-    url: process.env.DATABASE_URL || 'postgresql://knotnex_user:knotnex_password@localhost:5432/knotnex_db',
+    url: process.env.DATABASE_URL || 'postgresql://postgres:knotnex%402026@34.93.172.107:5432/knotnex_db',
     poolMin: parseInt(process.env.DB_POOL_MIN || '2', 10),
     poolMax: parseInt(process.env.DB_POOL_MAX || '20', 10),
     ssl: process.env.DB_SSL === 'true',
@@ -48,7 +48,7 @@ export const config = {
 
   brevo: {
     apiKey: process.env.BREVO_API_KEY || '',
-    fromEmail: process.env.BREVO_FROM_EMAIL || 'noreply@knotnex.com',
+    fromEmail: process.env.BREVO_FROM_EMAIL || 'knotnex.developer@gmail.com',
     fromName: process.env.BREVO_FROM_NAME || 'KnotNex Platform',
   },
 
@@ -66,7 +66,7 @@ export const config = {
   },
 
   security: {
-    jwtSecret: process.env.JWT_SECRET || 'knotnex_secret_fallback_key',
+    jwtSecret: process.env.JWT_SECRET || 'knotnex_jwt_secret_production_2026_super_secure_auth_key',
     rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 min
     rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
   },

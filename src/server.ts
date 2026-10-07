@@ -11,8 +11,8 @@ const server = http.createServer(app);
 // Initialize Socket.IO real-time engine
 const io = initializeSocketServer(server);
 
-server.listen(config.port, () => {
-  logger.info(`🚀 Knotnex API Server listening on port ${config.port} [${config.env}]`);
+server.listen(config.port, '0.0.0.0', () => {
+  logger.info(`🚀 Knotnex API Server listening on 0.0.0.0:${config.port} [${config.env}]`);
   logger.info(`📡 Healthcheck available at: http://localhost:${config.port}/api/v1/health`);
   logger.info(`⚡ Socket.IO real-time engine attached at /socket.io`);
 });

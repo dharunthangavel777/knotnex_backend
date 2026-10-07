@@ -4,17 +4,26 @@ import { config } from '../config';
 import { redis } from '../config/redis';
 import { logger } from '../config/logger';
 
+import { isRedisReady } from '../config/redis';
+
 // ─── Helper: create Redis-backed rate limiter store ──────────────────────────
-// In development or when Redis is offline, falls back to in-memory store gracefully.
+// Falls back to express-rate-limit's built-in in-memory store if Redis is offline or not ready.
 function createStore(prefix: string) {
-  if (config.env === 'development') {
-    // In local development, use express-rate-limit's built-in MemoryStore (no Redis dependency required)
+  // If Redis is not connected, use express-rate-limit built-in MemoryStore safely
+  if (!isRedisReady()) {
     return undefined;
   }
 
   try {
     return new RedisStore({
-      sendCommand: (...args: string[]) => redis.call(...(args as [string, ...string[]])) as any,
+      sendCommand: async (...args: string[]) => {
+        try {
+          if (!isRedisReady()) return null as any;
+          return await (redis.call as any)(...args);
+        } catch {
+          return null as any;
+        }
+      },
       prefix: `ratelimit:${prefix}:`,
     });
   } catch (err: any) {
