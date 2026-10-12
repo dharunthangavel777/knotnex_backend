@@ -6,6 +6,30 @@ import { AuthenticatedUser } from '../types/interfaces';
 import { UserRole } from '../types/enums';
 import { logger } from '../config/logger';
 import { verifyAccessToken } from '../shared/utils/jwt.util';
+import { redis, isRedisReady } from '../config/redis';
+
+// ─── Fast In-Memory / Redis User Cache (5 min TTL) ───────────────────────────
+// Eliminates repetitive SELECT FROM users queries on high-frequency API endpoints.
+const AUTH_USER_CACHE_TTL = 300; // 5 minutes
+
+async function getCachedUser(cacheKey: string): Promise<any | null> {
+  if (!isRedisReady()) return null;
+  try {
+    const raw = await redis.get(cacheKey);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function setCachedUser(cacheKey: string, user: any): Promise<void> {
+  if (!isRedisReady()) return;
+  try {
+    await redis.set(cacheKey, JSON.stringify(user), 'EX', AUTH_USER_CACHE_TTL);
+  } catch {
+    // Silent fail on cache set
+  }
+}
 
 // ─── Primary Authentication Middleware ───────────────────────────────────────
 // Supports both:
@@ -38,11 +62,21 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     }
 
     // ─── Try Knotnex JWT (access token) ──────────────────────────────────────
-    // Our JWTs contain `type: 'access'` in payload
     try {
       const decoded = verifyAccessToken(token);
       if (decoded.type === 'access') {
-        // Quick DB lookup to get is_banned status
+        const cacheKey = `auth:user:id:${decoded.sub}`;
+        const cachedUser = await getCachedUser(cacheKey);
+
+        if (cachedUser) {
+          if (cachedUser.isBanned) {
+            return ApiResponse.error(res, 'Your account has been suspended', 403, 'ACCOUNT_BANNED');
+          }
+          req.user = cachedUser;
+          return next();
+        }
+
+        // Cache miss: query DB
         const userRes = await query(
           'SELECT id, firebase_uid, email, role, is_verified, is_banned FROM users WHERE id = $1 LIMIT 1',
           [decoded.sub]
@@ -54,7 +88,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
             return ApiResponse.error(res, 'Your account has been suspended', 403, 'ACCOUNT_BANNED');
           }
 
-          req.user = {
+          const userObj: AuthenticatedUser = {
             id: dbUser.id,
             firebaseUid: dbUser.firebase_uid,
             email: dbUser.email,
@@ -62,6 +96,9 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
             isVerified: dbUser.is_verified,
             isBanned: dbUser.is_banned,
           };
+
+          await setCachedUser(cacheKey, userObj);
+          req.user = userObj;
           return next();
         }
       }
@@ -75,6 +112,16 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       decodedToken = await firebaseAuth.verifyIdToken(token);
     } catch (err: any) {
       return ApiResponse.error(res, 'Invalid or expired authentication token', 401, 'INVALID_TOKEN');
+    }
+
+    const fbCacheKey = `auth:user:fb:${decodedToken.uid}`;
+    const cachedFbUser = await getCachedUser(fbCacheKey);
+    if (cachedFbUser) {
+      if (cachedFbUser.isBanned) {
+        return ApiResponse.error(res, 'Your account has been suspended', 403, 'ACCOUNT_BANNED');
+      }
+      req.user = cachedFbUser;
+      return next();
     }
 
     // Lookup user in PostgreSQL by Firebase UID
@@ -117,7 +164,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       return ApiResponse.error(res, 'Your account has been suspended', 403, 'ACCOUNT_BANNED');
     }
 
-    req.user = {
+    const userObj: AuthenticatedUser = {
       id: dbUser.id,
       firebaseUid: dbUser.firebase_uid,
       email: dbUser.email,
@@ -126,6 +173,8 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       isBanned: dbUser.is_banned,
     };
 
+    await setCachedUser(fbCacheKey, userObj);
+    req.user = userObj;
     return next();
   } catch (error: any) {
     logger.error('Authentication middleware error', { error: error.message });

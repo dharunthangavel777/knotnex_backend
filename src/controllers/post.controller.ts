@@ -107,6 +107,17 @@ export class PostController {
     }
   }
 
+  // ── BATCH RECORD VIEWS ───────────────────────────────────────────
+  static async batchRecordViews(req: Request, res: Response) {
+    try {
+      const postIds = req.body.postIds || req.body.post_ids || [];
+      const result = await PostService.batchRecordViews(postIds, req.user!.id);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
   // ── REPORT ───────────────────────────────────────────────────────
   static async reportPost(req: Request, res: Response) {
     try {

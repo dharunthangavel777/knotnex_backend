@@ -25,7 +25,13 @@ steps:
       '--region', 'asia-south1',
       '--platform', 'managed',
       '--allow-unauthenticated',
-      '--port', '8080'
+      '--port', '8080',
+      '--min-instances', '2',
+      '--max-instances', '25',
+      '--concurrency', '80',
+      '--cpu', '2',
+      '--memory', '2Gi',
+      '--no-cpu-throttling'
     ]
 
 images:

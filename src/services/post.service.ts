@@ -6,7 +6,9 @@ import { NotificationService } from './notification.service';
 // ────────────────────────────────────────────────────────────────────────────
 // Helper: build full post SELECT fragment (shared across feed / getById)
 // ────────────────────────────────────────────────────────────────────────────
-const POST_SELECT = (userId: string) => `
+const POST_SELECT = (userId: string) => {
+  const safeUserId = (userId && /^[0-9a-fA-F-]{36}$/.test(userId)) ? userId : FALLBACK_UUID;
+  return `
   SELECT
     p.*,
     u.full_name        AS author_name,
@@ -15,17 +17,17 @@ const POST_SELECT = (userId: string) => `
     u.is_verified      AS author_verified,
     u.role             AS author_headline,
 
-    -- real-time counts from DB (source of truth)
-    (SELECT COUNT(*)::int FROM post_reactions   pr WHERE pr.post_id = p.id)                AS likes_count,
-    (SELECT COUNT(*)::int FROM post_comments    pc WHERE pc.post_id = p.id)                AS comments_count,
-    (SELECT COUNT(*)::int FROM post_shares      ps WHERE ps.post_id = p.id)                AS shares_count,
-    (SELECT COUNT(*)::int FROM saved_items      si WHERE si.item_id = p.id AND si.item_type='post') AS save_count,
-    (SELECT COUNT(*)::int FROM post_views       pv WHERE pv.post_id = p.id)               AS views_count,
+    -- Denormalized real-time counters from posts table (fast O(1) reads)
+    COALESCE(p.likes_count, 0)    AS likes_count,
+    COALESCE(p.comments_count, 0) AS comments_count,
+    COALESCE(p.shares_count, 0)   AS shares_count,
+    COALESCE(p.save_count, 0)     AS save_count,
+    COALESCE(p.views_count, 0)    AS views_count,
 
     -- per-user state
-    EXISTS(SELECT 1 FROM post_reactions pr WHERE pr.post_id = p.id AND pr.user_id = '${userId}')         AS is_liked,
-    EXISTS(SELECT 1 FROM saved_items   si WHERE si.item_id = p.id AND si.user_id = '${userId}' AND si.item_type='post') AS is_saved,
-    EXISTS(SELECT 1 FROM user_followers uf WHERE uf.following_id = p.author_id AND uf.follower_id = '${userId}') AS is_following_author,
+    EXISTS(SELECT 1 FROM post_reactions pr WHERE pr.post_id = p.id AND pr.user_id = '${safeUserId}')         AS is_liked,
+    EXISTS(SELECT 1 FROM saved_items   si WHERE si.item_id = p.id AND si.user_id = '${safeUserId}' AND si.item_type='post') AS is_saved,
+    EXISTS(SELECT 1 FROM user_followers uf WHERE uf.following_id = p.author_id AND uf.follower_id = '${safeUserId}') AS is_following_author,
 
     -- top 3 likers for "liked by" preview
     (SELECT json_agg(liker_info) FROM (
@@ -40,6 +42,7 @@ const POST_SELECT = (userId: string) => `
   FROM posts p
   JOIN users u ON p.author_id = u.id
 `;
+};
 
 const FALLBACK_UUID = '00000000-0000-0000-0000-000000000000';
 
@@ -295,6 +298,45 @@ export class PostService {
       `SELECT COUNT(*)::int AS c FROM post_views WHERE post_id=$1`, [postId]
     );
     return { views_count: countRes.rows[0].c };
+  }
+
+  // ────────────────────────────────────────────────────────────────
+  // BATCH RECORD VIEWS (Bulk insert & increment)
+  // ────────────────────────────────────────────────────────────────
+  static async batchRecordViews(postIds: string[], userId: string) {
+    if (!postIds || !Array.isArray(postIds) || postIds.length === 0) {
+      return { recorded: 0 };
+    }
+
+    // Filter valid UUID strings and limit to max 50 per batch
+    const uuidRegex = /^[0-9a-fA-F-]{36}$/;
+    const validIds = Array.from(new Set(postIds.filter((id) => typeof id === 'string' && uuidRegex.test(id)))).slice(0, 50);
+
+    if (validIds.length === 0) {
+      return { recorded: 0 };
+    }
+
+    try {
+      // Bulk insert into post_views deduplicated by (post_id, user_id, viewed_at)
+      await query(
+        `INSERT INTO post_views (post_id, user_id, viewed_at)
+         SELECT unnest($1::uuid[]), $2, CURRENT_DATE
+         ON CONFLICT (post_id, user_id, viewed_at) DO NOTHING`,
+        [validIds, userId]
+      );
+
+      // Increment views_count for all posts in the batch
+      await query(
+        `UPDATE posts
+         SET views_count = views_count + 1
+         WHERE id = ANY($1::uuid[])`,
+        [validIds]
+      );
+
+      return { recorded: validIds.length };
+    } catch (err: any) {
+      return { recorded: 0, error: err.message };
+    }
   }
 
   // ────────────────────────────────────────────────────────────────
