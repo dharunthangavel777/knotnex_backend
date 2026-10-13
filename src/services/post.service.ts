@@ -90,7 +90,7 @@ export class PostService {
   // ────────────────────────────────────────────────────────────────
   static async getFeed(userId: string, params: any) {
     const { page, limit, offset } = getPagination(params);
-    const safeId = userId || FALLBACK_UUID;
+    const safeId = (userId && /^[0-9a-fA-F-]{36}$/.test(userId)) ? userId : FALLBACK_UUID;
 
     const countRes = await query(
       `SELECT COUNT(*) FROM posts WHERE is_moderated = false AND audience = 'public'`
@@ -121,7 +121,7 @@ export class PostService {
   // ────────────────────────────────────────────────────────────────
   static async getReels(userId: string, params: any) {
     const { page, limit, offset } = getPagination(params);
-    const safeId = userId || FALLBACK_UUID;
+    const safeId = (userId && /^[0-9a-fA-F-]{36}$/.test(userId)) ? userId : FALLBACK_UUID;
 
     const countRes = await query(
       `SELECT COUNT(*) FROM posts WHERE post_type = 'reel' AND is_moderated = false`
@@ -143,7 +143,7 @@ export class PostService {
   // GET SINGLE POST
   // ────────────────────────────────────────────────────────────────
   static async getPostById(postId: string, userId?: string) {
-    const safeId = userId || FALLBACK_UUID;
+    const safeId = (userId && /^[0-9a-fA-F-]{36}$/.test(userId)) ? userId : FALLBACK_UUID;
     const res = await query(
       `${POST_SELECT(safeId)} WHERE p.id = $1`,
       [postId]

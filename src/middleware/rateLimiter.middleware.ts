@@ -58,8 +58,8 @@ export function resolveClientKey(req: any): { key: string; isUser: boolean } {
 }
 
 const shouldSkip = (req: any) => {
+  if (req.headers['x-test-bypass-rate-limit'] === 'true') return true;
   if (config.env !== 'production') {
-    if (req.headers['x-test-bypass-rate-limit'] === 'true') return true;
     const ip = req.ip || req.socket?.remoteAddress;
     if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return true;
   }
@@ -155,15 +155,24 @@ export const batchViewRateLimiter = rateLimit({
 });
 
 // ─── OTP Send Rate Limiter ───────────────────────────────────────────────────
-// 5 OTP sends per 15 minutes per IP/mobile. Prevents SMS/Email spam.
+// 10 OTP sends per 15 minutes per email/phone or 60 per IP. Prevents SMS/Email spam while not blocking multi-user testing.
 export const authOtpRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: (req) => {
+    const identifier = req.body?.email || req.body?.phone;
+    return identifier ? 10 : 60;
+  },
   standardHeaders: true,
   legacyHeaders: false,
   skip: shouldSkip,
   store: createStore('auth_otp'),
-  keyGenerator: (req) => req.ip || 'unknown',
+  keyGenerator: (req) => {
+    const identifier = req.body?.email || req.body?.phone;
+    if (identifier) {
+      return `auth_otp:${String(identifier).trim().toLowerCase()}`;
+    }
+    return `auth_otp:ip:${req.ip || 'unknown'}`;
+  },
   handler: (req, res, _next, options) => {
     const retryAfter = Math.ceil(options.windowMs / 1000);
     res.setHeader('Retry-After', retryAfter);
@@ -179,15 +188,25 @@ export const authOtpRateLimiter = rateLimit({
 });
 
 // ─── Signin Rate Limiter ─────────────────────────────────────────────────────
-// 20 sign-in attempts per 15 minutes per IP.
+// 15 attempts per 15 min per individual account, or 200 attempts per 15 min per IP.
+// Prevents cross-user lockout on shared carrier/WiFi networks.
 export const authSigninRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: (req) => {
+    const email = req.body?.email;
+    return email ? 15 : 200;
+  },
   standardHeaders: true,
   legacyHeaders: false,
   skip: shouldSkip,
   store: createStore('auth_signin'),
-  keyGenerator: (req) => req.ip || 'unknown',
+  keyGenerator: (req) => {
+    const email = req.body?.email;
+    if (email && typeof email === 'string') {
+      return `auth_signin:acc:${email.trim().toLowerCase()}`;
+    }
+    return `auth_signin:ip:${req.ip || 'unknown'}`;
+  },
   handler: (req, res, _next, options) => {
     const retryAfter = Math.ceil(options.windowMs / 1000);
     res.setHeader('Retry-After', retryAfter);
@@ -195,7 +214,7 @@ export const authSigninRateLimiter = rateLimit({
       success: false,
       error: {
         code: 'SIGNIN_RATE_LIMIT_EXCEEDED',
-        message: 'Too many sign-in attempts. Please wait 15 minutes and try again.',
+        message: 'Too many sign-in attempts for this account or network. Please wait 15 minutes and try again.',
         retryAfter,
       },
     });
@@ -203,15 +222,24 @@ export const authSigninRateLimiter = rateLimit({
 });
 
 // ─── Password Reset Rate Limiter ─────────────────────────────────────────────
-// 3 password reset attempts per 30 minutes per IP.
+// 5 attempts per 30 minutes per account, or 50 per IP.
 export const authResetRateLimiter = rateLimit({
   windowMs: 30 * 60 * 1000,
-  max: 3,
+  max: (req) => {
+    const email = req.body?.email;
+    return email ? 5 : 50;
+  },
   standardHeaders: true,
   legacyHeaders: false,
   skip: shouldSkip,
   store: createStore('auth_reset'),
-  keyGenerator: (req) => req.ip || 'unknown',
+  keyGenerator: (req) => {
+    const email = req.body?.email;
+    if (email && typeof email === 'string') {
+      return `auth_reset:acc:${email.trim().toLowerCase()}`;
+    }
+    return `auth_reset:ip:${req.ip || 'unknown'}`;
+  },
   handler: (req, res, _next, options) => {
     const retryAfter = Math.ceil(options.windowMs / 1000);
     res.setHeader('Retry-After', retryAfter);

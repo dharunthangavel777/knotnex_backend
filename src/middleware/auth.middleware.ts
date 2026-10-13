@@ -147,16 +147,45 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     }
 
     if (!userRes.rowCount || userRes.rowCount === 0) {
-      // Firebase user not yet in PostgreSQL (rare, during signup flow)
-      req.user = {
-        id: '',
-        firebaseUid: decodedToken.uid,
-        email: decodedToken.email || '',
-        role: (decodedToken['role'] as UserRole) || UserRole.USER,
-        isVerified: decodedToken.email_verified || false,
-        isBanned: false,
-      };
-      return next();
+      // Auto-provision verified Firebase user in PostgreSQL to guarantee a valid UUID
+      try {
+        const autoEmail = (decodedToken.email || `${decodedToken.uid}@knotnex.user`).toLowerCase().trim();
+        const autoName = decodedToken.name || (decodedToken.email ? decodedToken.email.split('@')[0] : 'KnotNex Member');
+        const autoRole = (decodedToken['role'] as UserRole) || UserRole.USER;
+
+        const insertRes = await query(
+          `INSERT INTO users (firebase_uid, email, full_name, role, is_verified)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (email) DO UPDATE SET firebase_uid = EXCLUDED.firebase_uid, updated_at = NOW()
+           RETURNING id, firebase_uid, email, role, is_verified, is_banned`,
+          [decodedToken.uid, autoEmail, autoName, autoRole, decodedToken.email_verified || true]
+        );
+
+        if (insertRes.rowCount && insertRes.rowCount > 0) {
+          const createdUser = insertRes.rows[0];
+          await query(
+            `INSERT INTO user_profiles (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
+            [createdUser.id]
+          );
+
+          const userObj: AuthenticatedUser = {
+            id: createdUser.id,
+            firebaseUid: createdUser.firebase_uid,
+            email: createdUser.email,
+            role: createdUser.role as UserRole,
+            isVerified: createdUser.is_verified,
+            isBanned: createdUser.is_banned,
+          };
+
+          await setCachedUser(fbCacheKey, userObj);
+          req.user = userObj;
+          return next();
+        }
+      } catch (provErr: any) {
+        logger.warn(`[AuthMiddleware] Auto-provisioning failed: ${provErr.message}`);
+      }
+
+      return ApiResponse.error(res, 'User account not configured in database', 401, 'ACCOUNT_NOT_FOUND');
     }
 
     const dbUser = userRes.rows[0];

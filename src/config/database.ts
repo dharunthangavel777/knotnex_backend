@@ -7,8 +7,9 @@ const poolConfig: PoolConfig = {
   min: config.database.poolMin,
   max: config.database.poolMax,
   ssl: config.database.ssl ? { rejectUnauthorized: false } : false,
-  connectionTimeoutMillis: 5000,
-  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
+  maxUses: 7500,
 };
 
 export const pool = new Pool(poolConfig);
