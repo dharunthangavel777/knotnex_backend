@@ -10,6 +10,8 @@ const REGISTRATION_TOKEN_TTL = '15m';
 const RESET_TOKEN_TTL = '10m';
 
 const REFRESH_TOKEN_PREFIX = 'refresh_token:';
+const RESET_TOKEN_TTL_SECONDS = 10 * 60; // 10 minutes in seconds
+const RESET_TOKEN_PREFIX = 'reset_token:';
 
 export interface JwtAccessPayload {
   sub: string;       // user.id (PostgreSQL UUID)
@@ -35,6 +37,7 @@ export interface JwtRegistrationPayload {
 export interface JwtResetPayload {
   email: string;
   userId: string;
+  jti?: string;
   type: 'reset';
 }
 
@@ -83,6 +86,7 @@ export async function signRefreshToken(userId: string): Promise<{ token: string;
 
 // In-memory fallback map for refresh tokens when Redis is offline
 const memoryRefreshTokens = new Map<string, string>();
+const memoryResetTokens = new Set<string>();
 
 export function verifyRefreshToken(token: string): JwtRefreshPayload {
   return jwt.verify(token, config.security.jwtSecret) as JwtRefreshPayload;
@@ -164,12 +168,26 @@ export function verifyRegistrationToken(token: string): JwtRegistrationPayload {
 
 // ─── Password Reset Token ───────────────────────────────────────────────────
 
-export function signResetToken(payload: Omit<JwtResetPayload, 'type'>): string {
-  return jwt.sign(
-    { ...payload, type: 'reset' },
+export async function signResetToken(payload: Omit<JwtResetPayload, 'type' | 'jti'>): Promise<string> {
+  const jti = `${payload.userId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const token = jwt.sign(
+    { ...payload, jti, type: 'reset' },
     config.security.jwtSecret,
     { expiresIn: RESET_TOKEN_TTL } as SignOptions
   );
+
+  const key = `${RESET_TOKEN_PREFIX}${jti}`;
+  if (isRedisReady()) {
+    try {
+      await redis.setex(key, RESET_TOKEN_TTL_SECONDS, payload.userId);
+    } catch {
+      memoryResetTokens.add(key);
+    }
+  } else {
+    memoryResetTokens.add(key);
+  }
+
+  return token;
 }
 
 export function verifyResetToken(token: string): JwtResetPayload {
@@ -178,4 +196,30 @@ export function verifyResetToken(token: string): JwtResetPayload {
     throw new Error('Invalid token type');
   }
   return decoded;
+}
+
+export async function isResetTokenValid(jti?: string): Promise<boolean> {
+  if (!jti) return true;
+  const key = `${RESET_TOKEN_PREFIX}${jti}`;
+  if (isRedisReady()) {
+    try {
+      const val = await redis.get(key);
+      return val !== null;
+    } catch {
+      return memoryResetTokens.has(key);
+    }
+  }
+  return memoryResetTokens.has(key);
+}
+
+export async function revokeResetToken(jti?: string): Promise<void> {
+  if (!jti) return;
+  const key = `${RESET_TOKEN_PREFIX}${jti}`;
+  if (isRedisReady()) {
+    try {
+      await redis.del(key);
+      return;
+    } catch {}
+  }
+  memoryResetTokens.delete(key);
 }

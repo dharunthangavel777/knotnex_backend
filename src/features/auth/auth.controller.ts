@@ -67,7 +67,9 @@ export class AuthController {
       return ApiResponse.success(res, result, 'Signed in successfully.');
     } catch (error: any) {
       logger.warn('[AuthController] signin error', { error: error.message });
-      return ApiResponse.error(res, error.message, 401, 'SIGNIN_FAILED');
+      const status = error.statusCode || 401;
+      const code = error.code || 'SIGNIN_FAILED';
+      return ApiResponse.error(res, error.message, status, code);
     }
   }
 
@@ -122,7 +124,9 @@ export class AuthController {
       return ApiResponse.success(res, result, result.message);
     } catch (error: any) {
       logger.warn('[AuthController] forgotPassword error', { error: error.message });
-      return ApiResponse.error(res, error.message, 400, 'FORGOT_PASSWORD_FAILED');
+      const status = error.statusCode || 400;
+      const code = error.code || 'FORGOT_PASSWORD_FAILED';
+      return ApiResponse.error(res, error.message, status, code);
     }
   }
 
@@ -134,7 +138,9 @@ export class AuthController {
       return ApiResponse.success(res, result, result.message);
     } catch (error: any) {
       logger.warn('[AuthController] verifyForgotOtp error', { error: error.message });
-      return ApiResponse.error(res, error.message, 400, 'OTP_VERIFICATION_FAILED');
+      const status = error.statusCode || 400;
+      const code = error.code || 'OTP_VERIFICATION_FAILED';
+      return ApiResponse.error(res, error.message, status, code);
     }
   }
 
@@ -146,7 +152,9 @@ export class AuthController {
       return ApiResponse.success(res, result, result.message);
     } catch (error: any) {
       logger.warn('[AuthController] resetPassword error', { error: error.message });
-      return ApiResponse.error(res, error.message, 400, 'PASSWORD_RESET_FAILED');
+      const status = error.statusCode || 400;
+      const code = error.code || 'PASSWORD_RESET_FAILED';
+      return ApiResponse.error(res, error.message, status, code);
     }
   }
 

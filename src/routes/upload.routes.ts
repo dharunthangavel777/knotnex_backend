@@ -10,6 +10,8 @@ router.post('/video', authenticate, uploadVideo.single('file'), UploadController
 router.post('/document', authenticate, uploadDocument.single('file'), UploadController.uploadDocument);
 router.get('/signed-url', authenticate, UploadController.getSignedUrl);
 router.post('/signed-upload-url', authenticate, UploadController.getSignedUploadUrl);
+router.post('/upload-session', authenticate, UploadController.getSignedUploadUrl);
+router.post('/upload-sessions', authenticate, UploadController.getSignedUploadUrl);
 router.post('/batch-signed-upload-url', authenticate, UploadController.getBatchSignedUploadUrls);
 router.put('/direct-put', UploadController.handleDirectPut);
 

@@ -23,13 +23,21 @@ export const verifySignupOtpSchema = z.object({
   }),
 });
 
+export const passwordValidation = z
+  .string()
+  .min(6, 'Password must be at least 6 characters')
+  .regex(
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#]).{6,}$/,
+    'Password must contain uppercase, lowercase, number, and special character'
+  );
+
 // ─── Step 3: Complete Signup ─────────────────────────────────────────────────
 
 export const completeSignupSchema = z.object({
   body: z.object({
     registrationToken: z.string().min(1, 'Registration token is required'),
     firebaseIdToken: z.string().optional(),
-    password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+    password: passwordValidation.optional(),
     fullName: z.string().optional(),
     full_name: z.string().optional(),
     phone: z.string().optional(),
@@ -41,7 +49,7 @@ export const completeSignupSchema = z.object({
 export const signinSchema = z.object({
   body: z.object({
     firebaseIdToken: z.string().optional(),
-    email: z.string().email('Invalid email address').optional(),
+    email: z.string().min(1, 'Email or Knotnex ID is required').optional(),
     password: z.string().min(6, 'Password must be at least 6 characters').optional(),
   }).refine(data => !!(data.firebaseIdToken || (data.email && data.password)), {
     message: 'Either firebaseIdToken or email and password must be provided',
@@ -51,10 +59,13 @@ export const signinSchema = z.object({
 export const signupDirectSchema = z.object({
   body: z.object({
     email: z.string().email('Invalid email address'),
-    password: z.string().min(6, 'Password must be at least 6 characters'),
+    password: passwordValidation,
     fullName: z.string().min(2, 'Full name must be at least 2 characters').optional(),
     full_name: z.string().min(2, 'Full name must be at least 2 characters').optional(),
-    phone: z.string().optional(),
+    phone: z
+      .string()
+      .regex(/^\+[1-9]\d{6,14}$/, 'Phone must be in E.164 format (e.g. +919876543210)')
+      .optional(),
     role: z.string().optional(),
   }).refine(data => !!(data.fullName || data.full_name), {
     message: 'Full name is required',
@@ -83,7 +94,7 @@ export const verifyForgotOtpSchema = z.object({
 export const resetPasswordSchema = z.object({
   body: z.object({
     resetToken: z.string().min(1, 'Reset token is required'),
-    newPassword: z.string().min(8, 'Password must be at least 8 characters'),
+    newPassword: passwordValidation,
   }),
 });
 

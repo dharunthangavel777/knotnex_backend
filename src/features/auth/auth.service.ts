@@ -14,11 +14,25 @@ import {
   verifyRegistrationToken,
   signResetToken,
   verifyResetToken,
+  isResetTokenValid,
+  revokeResetToken,
 } from '../../shared/utils/jwt.util';
 import { UserRole } from '../../types/enums';
 import { logger } from '../../config/logger';
 import bcrypt from 'bcryptjs';
 import type { AuthResponse, AuthTokens, AuthUser, InitiateSignupData } from './auth.types';
+
+export class AuthError extends Error {
+  statusCode: number;
+  code: string;
+
+  constructor(message: string, statusCode: number = 400, code: string = 'AUTH_ERROR') {
+    super(message);
+    this.name = 'AuthError';
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
 
 // ─── Helper: build token pair ────────────────────────────────────────────────
 
@@ -223,10 +237,21 @@ export class AuthService {
       ? UserRole.ORGANIZATION
       : (rawRole === 'admin' ? UserRole.ADMIN : UserRole.USER);
 
-    // Check duplicate account
+    // Check duplicate account by email
     const existing = await query(`SELECT id FROM users WHERE LOWER(email) = $1`, [normalizedEmail]);
     if (existing.rowCount && existing.rowCount > 0) {
-      throw new Error('An account with this email already exists.');
+      throw new AuthError('An account with this email already exists.', 409, 'EMAIL_ALREADY_EXISTS');
+    }
+
+    // Check duplicate account by phone (if provided)
+    if (data.phone) {
+      const trimmedPhone = data.phone.trim();
+      if (trimmedPhone.length > 0) {
+        const existingPhone = await query(`SELECT id FROM users WHERE phone = $1`, [trimmedPhone]);
+        if (existingPhone.rowCount && existingPhone.rowCount > 0) {
+          throw new AuthError('An account with this phone number already exists.', 409, 'PHONE_ALREADY_EXISTS');
+        }
+      }
     }
 
     const passwordHash = data.password ? await bcrypt.hash(data.password, 10) : null;
@@ -253,7 +278,7 @@ export class AuthService {
   // ─── Sign In ─────────────────────────────────────────────────────────────
 
   /**
-   * Verifies Firebase ID token OR email/password credentials, issues JWT tokens.
+   * Verifies Firebase ID token OR email/password/knotnex-id credentials, issues JWT tokens.
    */
   static async signin(credentials: { firebaseIdToken?: string; email?: string; password?: string } | string): Promise<AuthResponse> {
     const token = typeof credentials === 'string' ? credentials : credentials?.firebaseIdToken;
@@ -292,30 +317,54 @@ export class AuthService {
     }
 
     if (email && password) {
-      const normalizedEmail = email.trim().toLowerCase();
-      const res = await query(
-        `SELECT id, firebase_uid, email, full_name, phone, role, avatar_url, is_verified, is_banned, password_hash
-         FROM users WHERE LOWER(email) = $1 LIMIT 1`,
-        [normalizedEmail]
-      );
+      const identifier = email.trim();
+      const isEmail = identifier.includes('@');
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+
+      let res;
+      if (isEmail) {
+        res = await query(
+          `SELECT id, firebase_uid, email, full_name, phone, role, avatar_url, is_verified, is_banned, password_hash
+           FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+          [identifier]
+        );
+      } else if (isUuid) {
+        res = await query(
+          `SELECT id, firebase_uid, email, full_name, phone, role, avatar_url, is_verified, is_banned, password_hash
+           FROM users WHERE id = $1 LIMIT 1`,
+          [identifier]
+        );
+      } else {
+        res = await query(
+          `SELECT id, firebase_uid, email, full_name, phone, role, avatar_url, is_verified, is_banned, password_hash
+           FROM users WHERE LOWER(full_name) = LOWER($1) OR phone = $1 LIMIT 1`,
+          [identifier]
+        );
+      }
 
       if (!res.rowCount || res.rowCount === 0) {
-        throw new Error('Invalid email or password.');
+        // Timing attack protection: run dummy hash comparison
+        await bcrypt.compare(password, '$2b$10$e8Za3sP0Fk9sLdKmQ1O2U.2Z8vFm2Xl4y6H8j1K3m5n7o9P1Q3S5u');
+        throw new AuthError('No account found. Please create an account before signing in.', 404, 'ACCOUNT_NOT_FOUND');
       }
 
       const dbUser = res.rows[0];
 
       if (dbUser.is_banned) {
-        throw new Error('Your account has been suspended. Please contact support.');
+        throw new AuthError('Your account has been suspended. Please contact support.', 403, 'ACCOUNT_BANNED');
       }
 
       if (!dbUser.password_hash) {
-        throw new Error('Invalid email or password.');
+        throw new AuthError(
+          'This account was created with Google Sign-In. Please sign in using Google or reset your password.',
+          400,
+          'OAUTH_ACCOUNT_DETECTED'
+        );
       }
 
       const match = await bcrypt.compare(password, dbUser.password_hash);
       if (!match) {
-        throw new Error('Invalid email or password.');
+        throw new AuthError('Invalid email or password. Please try again.', 401, 'INVALID_CREDENTIALS');
       }
 
       const user = rowToAuthUser(dbUser);
@@ -394,19 +443,19 @@ export class AuthService {
   static async forgotPassword(email: string) {
     const normalized = email.toLowerCase().trim();
 
-    // Check email exists (but don't reveal if it doesn't for security)
+    // Check email exists
     const res = await query(
       'SELECT id FROM users WHERE email = $1 LIMIT 1',
       [normalized]
     );
 
-    // Always return success (prevents email enumeration)
     if (!res.rowCount || res.rowCount === 0) {
       logger.warn(`[AuthService] Forgot password for unknown email: ${normalized}`);
-      return {
-        message: 'If this email is registered, you will receive a reset code shortly.',
-        expiresIn: 900,
-      };
+      throw new AuthError(
+        'No account found with this email. Please create an account first.',
+        404,
+        'ACCOUNT_NOT_FOUND'
+      );
     }
 
     const otp = await createOtp(normalized, 'PASSWORD_RESET');
@@ -434,12 +483,12 @@ export class AuthService {
     );
 
     if (!res.rowCount || res.rowCount === 0) {
-      throw new Error('User not found.');
+      throw new AuthError('No account found with this email. Please create an account first.', 404, 'ACCOUNT_NOT_FOUND');
     }
 
     const userId = res.rows[0].id;
 
-    const resetToken = signResetToken({ email: normalized, userId });
+    const resetToken = await signResetToken({ email: normalized, userId });
 
     return {
       message: 'OTP verified. You can now reset your password.',
@@ -451,27 +500,43 @@ export class AuthService {
 
   /**
    * Uses the reset token to update the user's password via Firebase Admin SDK.
-   * Revokes all existing refresh tokens for the user.
+   * Revokes all existing refresh tokens for the user and invalidates the single-use reset token.
    */
   static async resetPassword(resetToken: string, newPassword: string) {
     let payload;
     try {
       payload = verifyResetToken(resetToken);
     } catch (err: any) {
-      throw new Error('Reset session expired. Please start over.');
+      throw new AuthError('Reset session expired. Please start over.', 400, 'RESET_TOKEN_EXPIRED');
     }
 
-    // Get firebase_uid from DB
+    // Verify token has not already been used (single-use enforcement)
+    if (payload.jti) {
+      const isValid = await isResetTokenValid(payload.jti);
+      if (!isValid) {
+        throw new AuthError('Reset token has already been used or expired. Please request a new one.', 400, 'RESET_TOKEN_ALREADY_USED');
+      }
+    }
+
+    // Get firebase_uid and password_hash from DB
     const res = await query(
-      'SELECT firebase_uid FROM users WHERE id = $1 LIMIT 1',
+      'SELECT firebase_uid, password_hash FROM users WHERE id = $1 LIMIT 1',
       [payload.userId]
     );
 
     if (!res.rowCount || res.rowCount === 0) {
-      throw new Error('User not found.');
+      throw new AuthError('User not found.', 404, 'USER_NOT_FOUND');
     }
 
-    const { firebase_uid } = res.rows[0];
+    const { firebase_uid, password_hash } = res.rows[0];
+
+    // Prevent setting the exact same password
+    if (password_hash) {
+      const isSamePassword = await bcrypt.compare(newPassword, password_hash);
+      if (isSamePassword) {
+        throw new AuthError('New password cannot be the same as your current password.', 400, 'PASSWORD_UNCHANGED');
+      }
+    }
 
     // Update password_hash in PostgreSQL
     const newHash = await bcrypt.hash(newPassword, 10);
@@ -487,6 +552,11 @@ export class AuthService {
       }
     } catch (e: any) {
       logger.warn(`[AuthService] Firebase password update skipped/failed: ${e.message}`);
+    }
+
+    // Invalidate the reset token in Redis so it cannot be reused
+    if (payload.jti) {
+      await revokeResetToken(payload.jti);
     }
 
     // Revoke all refresh tokens

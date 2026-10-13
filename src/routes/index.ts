@@ -65,6 +65,7 @@ masterRouter.use('/search', searchRoutes);
 
 // ─── File Uploads ─────────────────────────────────────────────────────────────
 masterRouter.use('/uploads', uploadRoutes);
+masterRouter.use('/media', uploadRoutes);
 
 // ─── Analytics ────────────────────────────────────────────────────────────────
 masterRouter.use('/analytics', analyticsRoutes);
