@@ -59,21 +59,24 @@ export function resolveClientKey(req: any): { key: string; isUser: boolean } {
 
 const shouldSkip = (req: any) => {
   if (req.headers['x-test-bypass-rate-limit'] === 'true') return true;
+  // Never throttle media upload signing requests so reels/posts publish reliably
+  if (req.originalUrl?.includes('/uploads/signed-upload-url') || req.originalUrl?.includes('/uploads/batch-signed-upload-url')) {
+    return true;
+  }
   if (config.env !== 'production') {
-    const ip = req.ip || req.socket?.remoteAddress;
-    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return true;
+    return true;
   }
   return false;
 };
 
 // ─── Standard API Rate Limiter ───────────────────────────────────────────────
-// Authenticated: 600 req / 15 min (~40 req/min).
-// Anonymous IP: 200 req / 15 min (Relaxed to support mobile carrier NAT).
+// Authenticated: 3,000 req / 15 min (~200 req/min).
+// Anonymous IP: 1,000 req / 15 min (Relaxed to support mobile carrier NAT & heavy feed polling).
 export const apiRateLimiter = rateLimit({
   windowMs: config.security.rateLimitWindowMs,
   max: (req) => {
     const { isUser } = resolveClientKey(req);
-    return isUser ? 600 : config.security.rateLimitMax;
+    return isUser ? 3000 : (config.security.rateLimitMax > 200 ? config.security.rateLimitMax : 1000);
   },
   standardHeaders: true,
   legacyHeaders: false,
