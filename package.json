@@ -5,11 +5,12 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-migrations.js",
     "start": "node dist/server.js",
     "lint": "eslint src/ --ext .ts",
     "test": "jest --passWithNoTests",
     "db:migrate": "ts-node scripts/migrate-db.ts",
+    "db:migrate:prod": "node dist/db/migrate.js",
     "db:seed": "ts-node scripts/seed-data.ts",
     "email:test": "ts-node scripts/test-email.ts",
     "firestore:setup": "ts-node scripts/setup-firestore.ts"

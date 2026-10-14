@@ -19,9 +19,10 @@ export const config = {
 
   database: {
     url: process.env.DATABASE_URL || 'postgresql://postgres:knotnex%402026@34.93.172.107:5432/knotnex_db',
-    poolMin: parseInt(process.env.DB_POOL_MIN || '5', 10),
-    poolMax: parseInt(process.env.DB_POOL_MAX || '35', 10),
+    poolMin: parseInt(process.env.DB_POOL_MIN || '2', 10),
+    poolMax: parseInt(process.env.DB_POOL_MAX || '8', 10),
     ssl: process.env.DB_SSL === 'true',
+    autoMigrate: process.env.AUTO_RUN_MIGRATIONS !== 'false',
   },
 
   redis: {

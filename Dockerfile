@@ -7,6 +7,7 @@ RUN npm ci
 
 COPY tsconfig.json ./
 COPY src/ ./src/
+COPY scripts/ ./scripts/
 
 RUN npm run build
 
@@ -22,6 +23,8 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY --from=builder /usr/src/app/dist ./dist
+COPY src/db/migrations ./dist/db/migrations
+COPY src/db/migrations ./src/db/migrations
 RUN mkdir -p uploads keys
 
 EXPOSE 8080

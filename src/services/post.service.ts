@@ -2,6 +2,11 @@ import { query } from '../config/database';
 import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
 import { PostType } from '../types/enums';
 import { NotificationService } from './notification.service';
+import {
+  broadcastPostComment,
+  broadcastPostInteraction,
+  broadcastCommentReaction,
+} from '../websockets/social.handler';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helper: build full post SELECT fragment (shared across feed / getById)
@@ -92,10 +97,14 @@ export class PostService {
     const { page, limit, offset } = getPagination(params);
     const safeId = (userId && /^[0-9a-fA-F-]{36}$/.test(userId)) ? userId : FALLBACK_UUID;
 
-    const countRes = await query(
-      `SELECT COUNT(*) FROM posts WHERE is_moderated = false AND audience = 'public'`
-    );
-    const total = parseInt(countRes.rows[0].count, 10);
+    // Only compute exact COUNT on initial load (page 1) to eliminate heavy full table scans on scroll
+    let total = 0;
+    if (page === 1) {
+      const countRes = await query(
+        `SELECT COUNT(*) FROM posts WHERE is_moderated = false AND audience = 'public'`
+      );
+      total = parseInt(countRes.rows[0].count, 10);
+    }
 
     const postsRes = await query(
       `${POST_SELECT(safeId)}
@@ -113,7 +122,11 @@ export class PostService {
       [limit, offset]
     );
 
-    return buildPaginatedResult(postsRes.rows, total, page, limit);
+    const effectiveTotal = page === 1
+      ? total
+      : offset + postsRes.rows.length + (postsRes.rows.length === limit ? 1 : 0);
+
+    return buildPaginatedResult(postsRes.rows, effectiveTotal, page, limit);
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -123,10 +136,14 @@ export class PostService {
     const { page, limit, offset } = getPagination(params);
     const safeId = (userId && /^[0-9a-fA-F-]{36}$/.test(userId)) ? userId : FALLBACK_UUID;
 
-    const countRes = await query(
-      `SELECT COUNT(*) FROM posts WHERE post_type = 'reel' AND is_moderated = false`
-    );
-    const total = parseInt(countRes.rows[0].count, 10);
+    // Only compute exact COUNT on initial load (page 1)
+    let total = 0;
+    if (page === 1) {
+      const countRes = await query(
+        `SELECT COUNT(*) FROM posts WHERE post_type = 'reel' AND is_moderated = false`
+      );
+      total = parseInt(countRes.rows[0].count, 10);
+    }
 
     const reelsRes = await query(
       `${POST_SELECT(safeId)}
@@ -136,7 +153,11 @@ export class PostService {
       [limit, offset]
     );
 
-    return buildPaginatedResult(reelsRes.rows, total, page, limit);
+    const effectiveTotal = page === 1
+      ? total
+      : offset + reelsRes.rows.length + (reelsRes.rows.length === limit ? 1 : 0);
+
+    return buildPaginatedResult(reelsRes.rows, effectiveTotal, page, limit);
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -183,7 +204,12 @@ export class PostService {
       // Keep denormalised counter in sync
       await query(`UPDATE posts SET likes_count = GREATEST(0, likes_count - 1) WHERE id = $1`, [postId]);
       const countRes = await query(`SELECT COUNT(*)::int AS c FROM post_reactions WHERE post_id=$1`,[postId]);
-      return { liked: false, likes_count: countRes.rows[0].c };
+      const likesCount = countRes.rows[0].c;
+
+      // Broadcast real-time interaction to all viewers
+      broadcastPostInteraction(postId, { action: 'unlike', likesCount, userId });
+
+      return { liked: false, likes_count: likesCount };
     } else {
       await query(
         `INSERT INTO post_reactions (post_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
@@ -205,7 +231,12 @@ export class PostService {
       }
 
       const countRes = await query(`SELECT COUNT(*)::int AS c FROM post_reactions WHERE post_id=$1`,[postId]);
-      return { liked: true, likes_count: countRes.rows[0].c };
+      const likesCount = countRes.rows[0].c;
+
+      // Broadcast real-time interaction to all viewers
+      broadcastPostInteraction(postId, { action: 'like', likesCount, userId });
+
+      return { liked: true, likes_count: likesCount };
     }
   }
 
@@ -447,7 +478,20 @@ export class PostService {
       [res.rows[0].id]
     );
 
-    return { ...enriched.rows[0], replies: [] };
+    const commentData = { ...enriched.rows[0], replies: [] };
+
+    // Broadcast real-time comment to room post:${postId} for all concurrent viewers
+    broadcastPostComment(postId, commentData);
+
+    // Also broadcast updated comments_count
+    const postCountRes = await query(`SELECT comments_count FROM posts WHERE id=$1`, [postId]);
+    broadcastPostInteraction(postId, {
+      action: 'comment',
+      commentsCount: postCountRes.rows[0]?.comments_count,
+      userId: authorId,
+    });
+
+    return commentData;
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -459,11 +503,20 @@ export class PostService {
       [commentId, userId]
     );
 
+    const commentRes = await query(`SELECT post_id FROM post_comments WHERE id=$1`, [commentId]);
+    const postId = commentRes.rows[0]?.post_id;
+
     if ((check.rowCount ?? 0) > 0) {
       await query(`DELETE FROM comment_reactions WHERE comment_id=$1 AND user_id=$2`, [commentId, userId]);
       await query(`UPDATE post_comments SET likes_count = GREATEST(0, likes_count-1) WHERE id=$1`, [commentId]);
       const c = await query(`SELECT COUNT(*)::int AS cnt FROM comment_reactions WHERE comment_id=$1`,[commentId]);
-      return { liked: false, likes_count: c.rows[0].cnt };
+      const likesCount = c.rows[0].cnt;
+
+      if (postId) {
+        broadcastCommentReaction(postId, commentId, { likesCount, isLiked: false, userId });
+      }
+
+      return { liked: false, likes_count: likesCount };
     } else {
       await query(
         `INSERT INTO comment_reactions (comment_id, user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
@@ -471,7 +524,13 @@ export class PostService {
       );
       await query(`UPDATE post_comments SET likes_count = likes_count + 1 WHERE id=$1`, [commentId]);
       const c = await query(`SELECT COUNT(*)::int AS cnt FROM comment_reactions WHERE comment_id=$1`,[commentId]);
-      return { liked: true, likes_count: c.rows[0].cnt };
+      const likesCount = c.rows[0].cnt;
+
+      if (postId) {
+        broadcastCommentReaction(postId, commentId, { likesCount, isLiked: true, userId });
+      }
+
+      return { liked: true, likes_count: likesCount };
     }
   }
 

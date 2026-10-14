@@ -31,7 +31,9 @@ steps:
       '--concurrency', '80',
       '--cpu', '2',
       '--memory', '2Gi',
-      '--no-cpu-throttling'
+      '--no-cpu-throttling',
+      '--session-affinity',
+      '--set-env-vars', 'AUTO_RUN_MIGRATIONS=true'
     ]
 
 images:
