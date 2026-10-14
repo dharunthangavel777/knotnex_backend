@@ -20,7 +20,7 @@ steps:
 
   - name: 'gcr.io/cloud-builders/gcloud'
     args: [
-      'run', 'deploy', 'knotnex-api',
+      'run', 'deploy', 'knotnex-backend',
       '--image', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:$SHORT_SHA',
       '--region', 'asia-south1',
       '--platform', 'managed',

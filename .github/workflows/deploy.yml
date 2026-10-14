@@ -9,7 +9,7 @@ on:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || 'knotnex-507306' }}
   REGION: asia-south1
-  SERVICE_NAME: knotnex-api
+  SERVICE_NAME: knotnex-backend
   GAR_REPOSITORY: knotnex
   IMAGE_NAME: asia-south1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID || 'knotnex-507306' }}/knotnex/api
 
