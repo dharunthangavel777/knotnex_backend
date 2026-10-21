@@ -26,7 +26,6 @@ steps:
       - '--min-instances=0'
       - '--max-instances=5'
       - '--concurrency=40'
-      - '--cpu=1'
       - '--memory=1Gi'
       - '--set-env-vars=NODE_ENV=production,APP_ENV=production,GCS_PROJECT_ID=$PROJECT_ID,GCS_MEDIA_BUCKET=knotnex-media-prod,GCS_PRIVATE_BUCKET=knotnex-private-prod,DATABASE_URL=postgresql://postgres:knotnex%402026@/knotnex_db?host=/cloudsql/$PROJECT_ID:asia-south1:knotnex-db,AUTO_RUN_MIGRATIONS=true'
 

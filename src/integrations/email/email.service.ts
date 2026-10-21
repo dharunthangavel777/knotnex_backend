@@ -91,11 +91,13 @@ export class EmailService {
     }
 
     // 3. Fallback when no key is set
-    logger.warn('No Brevo API/SMTP key configured. Email logged to console.', {
+    logger.error('No Brevo API/SMTP key configured. Email delivery cannot proceed.', {
       to,
       subject,
-      preview: textContent || 'HTML Email Body',
     });
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('Email delivery service is temporarily unavailable. Please try again shortly or contact support.');
+    }
     return { success: true, status: 'logged_only' };
   }
 
