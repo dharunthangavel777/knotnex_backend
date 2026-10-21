@@ -18,6 +18,7 @@ export const config = {
     'https://knotnex.com',
     'https://org.knotnex.com',
     'https://api.knotnex.com',
+    'https://knotnex-backend-389663780266.asia-south1.run.app',
   ].join(',')).split(',').map((s) => s.trim()),
 
   database: {
