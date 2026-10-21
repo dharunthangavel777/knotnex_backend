@@ -1,44 +1,43 @@
 steps:
-  # 1. Configure Docker helper for Artifact Registry
+  # 1. Build production container
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest'
+      - '.'
+
+  # 2. Authenticate and push to Artifact Registry in the same step
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+        docker push asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest
+
+  # 3. Deploy to Cloud Run (Low-Cost Optimized Spec: 0-5 instances, 1 vCPU, 1GiB)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'gcloud'
-    args: ['auth', 'configure-docker', 'asia-south1-docker.pkg.dev', '--quiet']
-
-  # 2. Build production container
-  - name: 'gcr.io/cloud-builders/docker'
-    args: [
-      'build',
-      '-t', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:$BUILD_ID',
-      '-t', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest',
-      '.'
-    ]
-
-  # 3. Push to Google Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest']
-
-  # 4. Deploy to Cloud Run (Low-Cost Optimized Spec: 0-5 instances, 1 vCPU, 1GiB)
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'gcloud'
-    args: [
-      'run', 'deploy', 'knotnex-backend',
-      '--image', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest',
-      '--region', 'asia-south1',
-      '--platform', 'managed',
-      '--allow-unauthenticated',
-      '--port', '8080',
-      '--service-account', 'knotnex-cloudrun-sa@$PROJECT_ID.iam.gserviceaccount.com',
-      '--add-cloudsql-instances', '$PROJECT_ID:asia-south1:knotnex-db',
-      '--min-instances', '0',
-      '--max-instances', '5',
-      '--concurrency', '40',
-      '--cpu', '1',
-      '--memory', '1Gi',
-      '--set-env-vars', 'NODE_ENV=production,APP_ENV=production,GCS_PROJECT_ID=$PROJECT_ID,GCS_MEDIA_BUCKET=knotnex-media-prod,GCS_PRIVATE_BUCKET=knotnex-private-prod,DATABASE_URL=postgresql://postgres:knotnex%402026@/knotnex_db?host=/cloudsql/$PROJECT_ID:asia-south1:knotnex-db,AUTO_RUN_MIGRATIONS=true'
-    ]
+    args:
+      - 'run'
+      - 'deploy'
+      - 'knotnex-backend'
+      - '--image=asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest'
+      - '--region=asia-south1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--port=8080'
+      - '--service-account=knotnex-cloudrun-sa@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--add-cloudsql-instances=$PROJECT_ID:asia-south1:knotnex-db'
+      - '--min-instances=0'
+      - '--max-instances=5'
+      - '--concurrency=40'
+      - '--cpu=1'
+      - '--memory=1Gi'
+      - '--set-env-vars=NODE_ENV=production,APP_ENV=production,GCS_PROJECT_ID=$PROJECT_ID,GCS_MEDIA_BUCKET=knotnex-media-prod,GCS_PRIVATE_BUCKET=knotnex-private-prod,DATABASE_URL=postgresql://postgres:knotnex%402026@/knotnex_db?host=/cloudsql/$PROJECT_ID:asia-south1:knotnex-db,AUTO_RUN_MIGRATIONS=true'
 
 images:
-  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:$BUILD_ID'
   - 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest'
 
 options:
