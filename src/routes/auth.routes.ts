@@ -14,6 +14,7 @@ router.post('/signup', authSigninRateLimiter, validate(signupSchema), AuthContro
 router.post('/send-otp', authOtpRateLimiter, validate(sendOtpSchema), AuthController.sendOtp);
 router.post('/verify-otp', authOtpRateLimiter, validate(verifyOtpSchema), AuthController.verifyOtp);
 router.post('/forgot-password', authOtpRateLimiter, validate(forgotPasswordSchema), AuthController.forgotPassword);
+router.post('/login', AuthController.login);
 router.post('/logout', authenticate, AuthController.logout);
 
 export default router;

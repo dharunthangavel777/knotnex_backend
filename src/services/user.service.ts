@@ -2,6 +2,12 @@ import { query } from '../config/database';
 import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
 import { UserRole } from '../types/enums';
 import { NotificationService } from './notification.service';
+import { config } from '../config';
+import { logger } from '../config/logger';
+
+// In-memory store starts completely empty as requested.
+export const inMemoryUsers: any[] = [];
+
 
 export class UserService {
   static async listUsers(params: { page?: any; limit?: any; role?: string; search?: string }) {
@@ -24,19 +30,35 @@ export class UserService {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const countRes = await query(`SELECT COUNT(*) FROM users ${whereClause}`, values);
-    const total = parseInt(countRes.rows[0].count, 10);
+    try {
+      const countRes = await query(`SELECT COUNT(*) FROM users ${whereClause}`, values);
+      const total = parseInt(countRes.rows[0].count, 10);
 
-    const usersRes = await query(
-      `SELECT id, firebase_uid, email, phone, full_name, avatar_url, role, is_verified, is_banned, created_at
-       FROM users
-       ${whereClause}
-       ORDER BY created_at DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      [...values, limit, offset]
-    );
+      const usersRes = await query(
+        `SELECT id, firebase_uid, email, phone, full_name, avatar_url, role, is_verified, is_banned, created_at
+         FROM users
+         ${whereClause}
+         ORDER BY created_at DESC
+         LIMIT $${idx++} OFFSET $${idx++}`,
+        [...values, limit, offset]
+      );
 
-    return buildPaginatedResult(usersRes.rows, total, page, limit);
+      return buildPaginatedResult(usersRes.rows, total, page, limit);
+    } catch (dbErr: any) {
+      if (config.env === 'development') {
+        logger.warn('[UserService] DB unreachable in dev, serving in-memory users');
+        let filtered = [...inMemoryUsers];
+        if (params.role) {
+          filtered = filtered.filter((u) => u.role === params.role);
+        }
+        if (params.search) {
+          const s = params.search.toLowerCase();
+          filtered = filtered.filter((u) => u.full_name.toLowerCase().includes(s) || u.email.toLowerCase().includes(s));
+        }
+        return buildPaginatedResult(filtered, filtered.length, page, limit);
+      }
+      throw dbErr;
+    }
   }
 
   static async getUserById(id: string, currentUserId?: string) {

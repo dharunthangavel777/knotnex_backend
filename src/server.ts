@@ -19,8 +19,12 @@ const startServer = async () => {
       logger.info('Checking automated PostgreSQL schema migrations...');
       await runMigrations();
     } catch (migErr: any) {
-      logger.error('FATAL: Database migration failed during server startup', { error: migErr.message });
-      process.exit(1);
+      if (config.env === 'development') {
+        logger.warn('Skipping database migration in development mode (in-memory dev fallback active): ' + migErr.message);
+      } else {
+        logger.error('FATAL: Database migration failed during server startup', { error: migErr.message });
+        process.exit(1);
+      }
     }
   }
 

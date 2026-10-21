@@ -1,40 +1,72 @@
 import { query } from '../config/database';
 import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
+import { config } from '../config';
+import { inMemoryUsers } from './user.service';
 
 export class AdminService {
   static async setBanStatus(userId: string, isBanned: boolean) {
-    const res = await query(
-      `UPDATE users SET is_banned = $1, updated_at = NOW() WHERE id = $2 RETURNING id, full_name, email, is_banned`,
-      [isBanned, userId]
-    );
-    return res.rows[0];
+    try {
+      const res = await query(
+        `UPDATE users SET is_banned = $1, updated_at = NOW() WHERE id = $2 RETURNING id, full_name, email, is_banned`,
+        [isBanned, userId]
+      );
+      return res.rows[0];
+    } catch (dbErr: any) {
+      if (config.env === 'development') {
+        const u = inMemoryUsers.find((user) => user.id === userId);
+        if (u) {
+          u.is_banned = isBanned;
+          u.status = isBanned ? 'Banned' : 'Active';
+          return { id: u.id, full_name: u.full_name, email: u.email, is_banned: u.is_banned };
+        }
+      }
+      throw dbErr;
+    }
   }
 
   static async setVerificationStatus(userId: string, isVerified: boolean) {
-    const res = await query(
-      `UPDATE users SET is_verified = $1, updated_at = NOW() WHERE id = $2 RETURNING id, full_name, email, is_verified`,
-      [isVerified, userId]
-    );
-    return res.rows[0];
+    try {
+      const res = await query(
+        `UPDATE users SET is_verified = $1, updated_at = NOW() WHERE id = $2 RETURNING id, full_name, email, is_verified`,
+        [isVerified, userId]
+      );
+      return res.rows[0];
+    } catch (dbErr: any) {
+      if (config.env === 'development') {
+        const u = inMemoryUsers.find((user) => user.id === userId);
+        if (u) {
+          u.is_verified = isVerified;
+          return { id: u.id, full_name: u.full_name, email: u.email, is_verified: u.is_verified };
+        }
+      }
+      throw dbErr;
+    }
   }
 
   static async getFeedsCurationQueue(params: { page?: any; limit?: any }) {
     const { page, limit, offset } = getPagination(params);
 
-    const countRes = await query(`SELECT COUNT(*) FROM posts WHERE flagged_for_review = true`);
-    const total = parseInt(countRes.rows[0].count, 10);
+    try {
+      const countRes = await query(`SELECT COUNT(*) FROM posts WHERE flagged_for_review = true`);
+      const total = parseInt(countRes.rows[0].count, 10);
 
-    const postsRes = await query(
-      `SELECT p.*, u.full_name as author_name, u.email as author_email
-       FROM posts p
-       JOIN users u ON p.author_id = u.id
-       WHERE p.flagged_for_review = true
-       ORDER BY p.created_at DESC
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
+      const postsRes = await query(
+        `SELECT p.*, u.full_name as author_name, u.email as author_email
+         FROM posts p
+         JOIN users u ON p.author_id = u.id
+         WHERE p.flagged_for_review = true
+         ORDER BY p.created_at DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset]
+      );
 
-    return buildPaginatedResult(postsRes.rows, total, page, limit);
+      return buildPaginatedResult(postsRes.rows, total, page, limit);
+    } catch (dbErr: any) {
+      if (config.env === 'development') {
+        return buildPaginatedResult([], 0, page, limit);
+      }
+      throw dbErr;
+    }
   }
 
   static async moderateFeedPost(postId: string, action: 'approve' | 'remove') {
