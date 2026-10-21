@@ -32,3 +32,6 @@ steps:
 
 images:
   - 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
