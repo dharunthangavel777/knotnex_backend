@@ -87,18 +87,23 @@ export function verifyRefreshToken(token: string): JwtRefreshPayload {
   return jwt.verify(token, config.security.jwtSecret) as JwtRefreshPayload;
 }
 
+const revokedRefreshTokens = new Set<string>();
+
 export async function revokeRefreshToken(jti: string): Promise<void> {
   memoryRefreshTokens.delete(`${REFRESH_TOKEN_PREFIX}${jti}`);
+  revokedRefreshTokens.add(jti);
 }
 
 export async function isRefreshTokenValid(jti: string): Promise<boolean> {
+  if (revokedRefreshTokens.has(jti)) return false;
   const key = `${REFRESH_TOKEN_PREFIX}${jti}`;
   const entry = memoryRefreshTokens.get(key);
-  if (!entry) return false;
-  if (entry.expiresAt < Date.now()) {
+  if (entry && entry.expiresAt < Date.now()) {
     memoryRefreshTokens.delete(key);
+    revokedRefreshTokens.add(jti);
     return false;
   }
+  // Cryptographically signed and non-revoked refresh tokens remain valid across server restarts
   return true;
 }
 
@@ -106,6 +111,8 @@ export async function revokeAllRefreshTokensForUser(userId: string): Promise<voi
   for (const [key, entry] of memoryRefreshTokens.entries()) {
     if (entry.userId === userId) {
       memoryRefreshTokens.delete(key);
+      const jti = key.replace(REFRESH_TOKEN_PREFIX, '');
+      revokedRefreshTokens.add(jti);
     }
   }
 }
@@ -154,13 +161,16 @@ export function verifyResetToken(token: string): JwtResetPayload {
   return decoded;
 }
 
+const usedResetTokens = new Set<string>();
+
 export async function isResetTokenValid(jti?: string): Promise<boolean> {
   if (!jti) return true;
+  if (usedResetTokens.has(jti)) return false;
   const key = `${RESET_TOKEN_PREFIX}${jti}`;
   const entry = memoryResetTokens.get(key);
-  if (!entry) return false;
-  if (entry.expiresAt < Date.now()) {
+  if (entry && entry.expiresAt < Date.now()) {
     memoryResetTokens.delete(key);
+    usedResetTokens.add(jti);
     return false;
   }
   return true;
@@ -169,4 +179,5 @@ export async function isResetTokenValid(jti?: string): Promise<boolean> {
 export async function revokeResetToken(jti?: string): Promise<void> {
   if (!jti) return;
   memoryResetTokens.delete(`${RESET_TOKEN_PREFIX}${jti}`);
+  usedResetTokens.add(jti);
 }

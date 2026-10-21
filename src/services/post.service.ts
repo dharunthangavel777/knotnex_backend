@@ -59,7 +59,11 @@ export class PostService {
     const mediaUrls     = data.mediaUrls   || data.media_urls   || [];
     const postType      = data.postType    || data.post_type    || PostType.POST;
     const thumbnailUrl  = data.thumbnailUrl|| data.thumbnail_url|| null;
-    const taggedUsers   = data.taggedUsers || data.tagged_users || [];
+    const rawTagged     = data.taggedUsers || data.tagged_users || [];
+    const uuidRegex     = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+    const safeTagged    = (Array.isArray(rawTagged) ? rawTagged : [])
+      .map((u: any) => (typeof u === 'string' ? u.trim() : u?.id?.toString()?.trim()))
+      .filter((id: any) => id && uuidRegex.test(id));
 
     const res = await query(
       `INSERT INTO posts (
@@ -79,7 +83,7 @@ export class PostService {
         data.audience   || 'public',
         data.category   || null,
         data.community  || null,
-        taggedUsers,
+        safeTagged,
         data.allowComments  !== false,
         data.allowReposts   !== false,
       ]

@@ -8,9 +8,10 @@ export const initiateSignupSchema = z.object({
     fullName: z.string().min(2, 'Full name must be at least 2 characters').max(100),
     phone: z
       .string()
-      .regex(/^\+[1-9]\d{6,14}$/, 'Phone must be in E.164 format (e.g. +919876543210)')
-      .optional(),
-    disabilityType: z.string().max(100).optional(),
+      .nullable()
+      .optional()
+      .transform(val => (val && val.trim().length > 0 ? val.trim() : undefined)),
+    disabilityType: z.string().max(100).nullable().optional(),
   }),
 });
 
@@ -27,7 +28,7 @@ export const passwordValidation = z
   .string()
   .min(6, 'Password must be at least 6 characters')
   .regex(
-    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&_\-#]).{6,}$/,
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>/\\~`_+=;\[\]\-]).{6,}$/,
     'Password must contain uppercase, lowercase, number, and special character'
   );
 
@@ -36,11 +37,11 @@ export const passwordValidation = z
 export const completeSignupSchema = z.object({
   body: z.object({
     registrationToken: z.string().min(1, 'Registration token is required'),
-    firebaseIdToken: z.string().optional(),
-    password: passwordValidation.optional(),
-    fullName: z.string().optional(),
-    full_name: z.string().optional(),
-    phone: z.string().optional(),
+    firebaseIdToken: z.string().nullable().optional(),
+    password: passwordValidation.nullable().optional(),
+    fullName: z.string().nullable().optional(),
+    full_name: z.string().nullable().optional(),
+    phone: z.string().nullable().optional(),
   }),
 });
 
@@ -48,7 +49,7 @@ export const completeSignupSchema = z.object({
 
 export const signinSchema = z.object({
   body: z.object({
-    firebaseIdToken: z.string().optional(),
+    firebaseIdToken: z.string().nullable().optional(),
     email: z.string().min(1, 'Email or Knotnex ID is required').optional(),
     password: z.string().min(6, 'Password must be at least 6 characters').optional(),
   }).refine(data => !!(data.firebaseIdToken || (data.email && data.password)), {
@@ -64,9 +65,10 @@ export const signupDirectSchema = z.object({
     full_name: z.string().min(2, 'Full name must be at least 2 characters').optional(),
     phone: z
       .string()
-      .regex(/^\+[1-9]\d{6,14}$/, 'Phone must be in E.164 format (e.g. +919876543210)')
-      .optional(),
-    role: z.string().optional(),
+      .nullable()
+      .optional()
+      .transform(val => (val && val.trim().length > 0 ? val.trim() : undefined)),
+    role: z.string().nullable().optional(),
   }).refine(data => !!(data.fullName || data.full_name), {
     message: 'Full name is required',
   }),
