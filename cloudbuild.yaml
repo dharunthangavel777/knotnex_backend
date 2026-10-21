@@ -1,22 +1,15 @@
 steps:
-  # 1. Build production container
+  # 1. Build and push container to Artifact Registry using docker + docker-credential-gcr
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'build'
-      - '-t'
-      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest'
-      - '.'
-
-  # 2. Authenticate and push to Artifact Registry in the same step
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+        docker-credential-gcr configure-docker --registries=asia-south1-docker.pkg.dev
+        docker build -t asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest .
         docker push asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest
 
-  # 3. Deploy to Cloud Run (Low-Cost Optimized Spec: 0-5 instances, 1 vCPU, 1GiB)
+  # 2. Deploy to Cloud Run (Low-Cost Spec: 0-5 instances, 1 vCPU, 1GiB)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: 'gcloud'
     args:
@@ -39,6 +32,3 @@ steps:
 
 images:
   - 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest'
-
-options:
-  logging: CLOUD_LOGGING_ONLY
