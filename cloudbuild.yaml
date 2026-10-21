@@ -3,7 +3,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: [
       'build',
-      '-t', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:$SHORT_SHA',
+      '-t', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:$BUILD_ID',
       '-t', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest',
       '.'
     ]
@@ -16,7 +16,7 @@ steps:
   - name: 'gcr.io/cloud-builders/gcloud'
     args: [
       'run', 'deploy', 'knotnex-backend',
-      '--image', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:$SHORT_SHA',
+      '--image', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:$BUILD_ID',
       '--region', 'asia-south1',
       '--platform', 'managed',
       '--allow-unauthenticated',
@@ -32,7 +32,7 @@ steps:
     ]
 
 images:
-  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:$SHORT_SHA'
+  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:$BUILD_ID'
   - 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api:latest'
 
 options:
