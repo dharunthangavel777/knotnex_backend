@@ -1,34 +1,13 @@
 import rateLimit from 'express-rate-limit';
-import { RedisStore } from 'rate-limit-redis';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
-import { redis, isRedisReady } from '../config/redis';
 import { logger } from '../config/logger';
 
-// ─── Helper: create Redis-backed rate limiter store ──────────────────────────
-// Falls back to express-rate-limit's built-in in-memory store if Redis is offline or not ready.
-function createStore(prefix: string) {
-  if (!isRedisReady()) {
-    return undefined;
-  }
+// ─── In-Memory Rate Limiters ──────────────────────────────────────────────────
+// Redis / Memorystore removed from this architecture (low-cost 3-service plan).
+// express-rate-limit's built-in MemoryStore is used instead.
+// With max 5 Cloud Run instances, per-instance limits are effective.
 
-  try {
-    return new RedisStore({
-      sendCommand: async (...args: string[]) => {
-        try {
-          if (!isRedisReady()) return null as any;
-          return await (redis.call as any)(...args);
-        } catch {
-          return null as any;
-        }
-      },
-      prefix: `ratelimit:${prefix}:`,
-    });
-  } catch (err: any) {
-    logger.warn(`[RateLimit] Redis store unavailable for ${prefix}, using memory store`, { error: err.message });
-    return undefined;
-  }
-}
 
 // ─── Key Resolution (User ID > Token Sub > Client IP) ────────────────────────
 // Prevents shared NAT/Carrier IP starvation by prioritizing authenticated User IDs.
@@ -81,7 +60,6 @@ export const apiRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: shouldSkip,
-  store: createStore('api'),
   keyGenerator: (req) => resolveClientKey(req).key,
   handler: (req, res, _next, options) => {
     const retryAfter = Math.ceil(options.windowMs / 1000);
@@ -105,7 +83,6 @@ export const feedRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: shouldSkip,
-  store: createStore('feed'),
   keyGenerator: (req) => resolveClientKey(req).key,
   handler: (req, res, _next, options) => {
     const retryAfter = Math.ceil(options.windowMs / 1000);
@@ -129,7 +106,6 @@ export const postInteractionRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: shouldSkip,
-  store: createStore('interactions'),
   keyGenerator: (req) => resolveClientKey(req).key,
   handler: (req, res, _next, options) => {
     const retryAfter = Math.ceil(options.windowMs / 1000);
@@ -153,7 +129,6 @@ export const batchViewRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: shouldSkip,
-  store: createStore('views'),
   keyGenerator: (req) => resolveClientKey(req).key,
 });
 
@@ -168,7 +143,6 @@ export const authOtpRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: shouldSkip,
-  store: createStore('auth_otp'),
   keyGenerator: (req) => {
     const identifier = req.body?.email || req.body?.phone;
     if (identifier) {
@@ -202,7 +176,6 @@ export const authSigninRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: shouldSkip,
-  store: createStore('auth_signin'),
   keyGenerator: (req) => {
     const email = req.body?.email;
     if (email && typeof email === 'string') {
@@ -235,7 +208,6 @@ export const authResetRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: shouldSkip,
-  store: createStore('auth_reset'),
   keyGenerator: (req) => {
     const email = req.body?.email;
     if (email && typeof email === 'string') {

@@ -3,7 +3,6 @@ import app from './app';
 import { config } from './config';
 import { logger } from './config/logger';
 import { pool } from './config/database';
-import { redis } from './config/redis';
 import { initializeSocketServer } from './websockets/socket.server';
 
 import { runMigrations } from './db/migrate';
@@ -44,9 +43,6 @@ const gracefulShutdown = async (signal: string) => {
     try {
       await pool.end();
       logger.info('PostgreSQL connection pool closed.');
-
-      redis.disconnect();
-      logger.info('Redis connection closed.');
 
       process.exit(0);
     } catch (err: any) {

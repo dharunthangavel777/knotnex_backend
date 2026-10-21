@@ -1,44 +1,14 @@
-import Redis from 'ioredis';
-import { config } from './index';
-import { logger } from './logger';
+// ─── Redis No-Op Stub ────────────────────────────────────────────────────────
+// Redis / Memorystore has been removed from this architecture.
+// All code that previously used Redis already has graceful in-memory fallbacks
+// gated on isRedisReady(). By always returning false, those fallbacks activate
+// automatically with zero code changes in callers.
+//
+// To re-enable Redis in future: replace this file with the real ioredis client
+// and point REDIS_URL to a Memorystore or self-hosted Redis instance.
+// ─────────────────────────────────────────────────────────────────────────────
 
-export const redis = new Redis(config.redis.url, {
-  maxRetriesPerRequest: null,
-  enableOfflineQueue: false,
-  lazyConnect: true,
-  retryStrategy(times) {
-    if (times > 3) {
-      logger.warn('Redis connection retry limit reached. Operating in graceful in-memory fallback mode.');
-      return null; // Stop retrying
-    }
-    return Math.min(times * 100, 2000);
-  },
-});
+export const redis = {} as any;
 
-let isConnected = false;
-
-redis.on('connect', () => {
-  isConnected = true;
-  logger.info('Connected to Redis (Memorystore)');
-});
-
-redis.on('ready', () => {
-  isConnected = true;
-});
-
-redis.on('close', () => {
-  isConnected = false;
-});
-
-redis.on('error', (err) => {
-  isConnected = false;
-  logger.warn('Redis offline (operating in safe in-memory fallback mode)', { error: err.message });
-});
-
-// Attempt initial connection safely without crashing application
-redis.connect().catch((err) => {
-  isConnected = false;
-  logger.warn('Redis not running locally — enabled automatic in-memory fallback for development');
-});
-
-export const isRedisReady = (): boolean => isConnected && redis.status === 'ready';
+// Always false → all callers fall through to their in-memory fallback paths.
+export const isRedisReady = (): boolean => false;

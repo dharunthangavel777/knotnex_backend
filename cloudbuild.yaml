@@ -12,7 +12,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', '--all-tags', 'asia-south1-docker.pkg.dev/$PROJECT_ID/knotnex/api']
 
-  # 3. Deploy to Cloud Run (5,000 CCU Spec)
+  # 3. Deploy to Cloud Run (Low-Cost Optimized Spec: 0-5 instances, 1 vCPU, 1GiB)
   - name: 'gcr.io/cloud-builders/gcloud'
     args: [
       'run', 'deploy', 'knotnex-backend',
@@ -21,14 +21,14 @@ steps:
       '--platform', 'managed',
       '--allow-unauthenticated',
       '--port', '8080',
-      '--min-instances', '2',
-      '--max-instances', '25',
-      '--concurrency', '80',
-      '--cpu', '2',
-      '--memory', '2Gi',
-      '--no-cpu-throttling',
-      '--session-affinity',
-      '--set-env-vars', 'AUTO_RUN_MIGRATIONS=true'
+      '--service-account', 'knotnex-cloudrun-sa@$PROJECT_ID.iam.gserviceaccount.com',
+      '--add-cloudsql-instances', '$PROJECT_ID:asia-south1:knotnex-db',
+      '--min-instances', '0',
+      '--max-instances', '5',
+      '--concurrency', '40',
+      '--cpu', '1',
+      '--memory', '1Gi',
+      '--set-env-vars', 'NODE_ENV=production,APP_ENV=production,GCS_PROJECT_ID=$PROJECT_ID,GCS_MEDIA_BUCKET=knotnex-media-prod,GCS_PRIVATE_BUCKET=knotnex-private-prod,DATABASE_URL=postgresql://postgres:knotnex%402026@/knotnex_db?host=/cloudsql/$PROJECT_ID:asia-south1:knotnex-db,AUTO_RUN_MIGRATIONS=true'
     ]
 
 images:

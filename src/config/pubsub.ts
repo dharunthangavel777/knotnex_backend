@@ -1,10 +1,6 @@
-import { PubSub } from '@google-cloud/pubsub';
-import { config } from './index';
-import { logger } from './logger';
-
-export const pubsub = new PubSub({
-  projectId: config.pubsub.projectId,
-});
+// ─── Google Cloud Pub/Sub Config — Disabled ───────────────────────────────────
+// Pub/Sub has been removed from this architecture. This file is a stub only.
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const TOPICS = {
   USER_REGISTERED: 'user.registered',
@@ -17,5 +13,3 @@ export const TOPICS = {
   POST_REPORTED: 'post.reported',
   ANALYTICS_EVENT: 'analytics.event',
 } as const;
-
-logger.info('Google Cloud Pub/Sub client configured', { projectId: config.pubsub.projectId });

@@ -1,6 +1,11 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+// ─── KnotNex Backend Configuration ──────────────────────────────────────────
+// GCP Project: knotnex (lively-welder-512304-n4)  |  Region: asia-south1
+// Architecture: Cloud Run + Cloud SQL + Cloud Storage (3-service low-cost)
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const config = {
   env: process.env.APP_ENV || process.env.NODE_ENV || 'development',
   isProduction: (process.env.APP_ENV || process.env.NODE_ENV) === 'production',
@@ -10,34 +15,30 @@ export const config = {
     'http://localhost:3000',
     'http://localhost:5173',
     'http://localhost:8080',
-    'https://knotnex-backend-445162659573.europe-west1.run.app',
-    'https://knotnex-backend-3wp4fzkfna-ew.a.run.app',
     'https://knotnex.com',
     'https://org.knotnex.com',
     'https://api.knotnex.com',
   ].join(',')).split(',').map((s) => s.trim()),
 
   database: {
-    url: process.env.DATABASE_URL || 'postgresql://postgres:knotnex%402026@34.93.172.107:5432/knotnex_db',
-    poolMin: parseInt(process.env.DB_POOL_MIN || '2', 10),
-    poolMax: parseInt(process.env.DB_POOL_MAX || '8', 10),
+    url: process.env.DATABASE_URL || 'postgresql://postgres:knotnex%402026@34.47.245.32:5432/knotnex_db',
+    // Conservative pool: 5 instances × 5 connections = 25 max (safe for db-g1-small)
+    poolMin: parseInt(process.env.DB_POOL_MIN || '1', 10),
+    poolMax: parseInt(process.env.DB_POOL_MAX || '5', 10),
     ssl: process.env.DB_SSL === 'true',
     autoMigrate: process.env.AUTO_RUN_MIGRATIONS !== 'false',
   },
 
-  redis: {
-    url: process.env.REDIS_URL || 'redis://localhost:6379',
-  },
-
   firebase: {
-    projectId: process.env.FIREBASE_PROJECT_ID || 'knotnex-dev',
-    serviceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY || './keys/firebase-sa.json',
+    projectId: process.env.FIREBASE_PROJECT_ID || 'knotnex-f68fd',
+    serviceAccountKey: process.env.FIREBASE_SERVICE_ACCOUNT_KEY || './keys/knotnex-f68fd-firebase-adminsdk-fbsvc-81c9923441.json',
   },
 
   gcs: {
-    mediaBucket: process.env.GCS_MEDIA_BUCKET || 'knotnex-media-dev',
-    privateBucket: process.env.GCS_PRIVATE_BUCKET || 'knotnex-private-dev',
-    projectId: process.env.GCS_PROJECT_ID || 'knotnex-dev',
+    // GCP Project: knotnex | ID: lively-welder-512304-n4
+    projectId: process.env.GCS_PROJECT_ID || 'lively-welder-512304-n4',
+    mediaBucket: process.env.GCS_MEDIA_BUCKET || 'knotnex-media-prod',
+    privateBucket: process.env.GCS_PRIVATE_BUCKET || 'knotnex-private-prod',
   },
 
   twilio: {
@@ -60,10 +61,6 @@ export const config = {
     smtpPass: process.env.SMTP_PASS || '',
     fromEmail: process.env.EMAIL_FROM || process.env.BREVO_FROM_EMAIL || 'noreply@knotnex.com',
     fromName: process.env.EMAIL_FROM_NAME || 'KnotNex Platform',
-  },
-
-  pubsub: {
-    projectId: process.env.PUBSUB_PROJECT_ID || 'knotnex-dev',
   },
 
   security: {

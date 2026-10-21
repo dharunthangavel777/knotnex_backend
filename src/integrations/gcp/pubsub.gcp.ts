@@ -1,19 +1,16 @@
-import { pubsub, TOPICS } from '../../config/pubsub';
+// ─── Google Cloud Pub/Sub — Disabled ─────────────────────────────────────────
+// Pub/Sub has been removed from this architecture to reduce cost.
+// PubSubIntegration.publishMessage() is a no-op; events are not queued.
+//
+// To re-enable: install @google-cloud/pubsub, restore the real implementation,
+// and set PUBSUB_PROJECT_ID in your environment.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { logger } from '../../config/logger';
 
 export class PubSubIntegration {
   static async publishMessage(topicName: string, data: Record<string, any>): Promise<string> {
-    try {
-      const dataBuffer = Buffer.from(JSON.stringify(data));
-      const messageId = await pubsub.topic(topicName).publishMessage({ data: dataBuffer });
-      logger.info('Pub/Sub message published', { topicName, messageId });
-      return messageId;
-    } catch (error: any) {
-      logger.warn('Pub/Sub publish failed (event queued locally/bypassed)', {
-        topicName,
-        error: error.message,
-      });
-      return 'mock_pubsub_id';
-    }
+    logger.debug(`[PubSub] Skipped (disabled): topic=${topicName}`, { data });
+    return 'pubsub_disabled';
   }
 }
