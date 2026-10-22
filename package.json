@@ -13,7 +13,8 @@
     "db:migrate:prod": "node dist/db/migrate.js",
     "db:seed": "ts-node scripts/seed-data.ts",
     "email:test": "ts-node scripts/test-email.ts",
-    "firestore:setup": "ts-node scripts/setup-firestore.ts"
+    "firestore:setup": "ts-node scripts/setup-firestore.ts",
+    "deploy": "gcloud builds submit --config=cloudbuild.yaml ."
   },
   "engines": {
     "node": ">=20.0.0"
