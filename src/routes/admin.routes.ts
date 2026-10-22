@@ -8,6 +8,7 @@ const router = Router();
 router.use(authenticate, requireAdmin);
 
 router.get('/users', AdminController.listAllUsers);
+router.get('/users/:id', AdminController.getUserDetails);
 router.patch('/users/:id/ban', AdminController.setBanStatus);
 router.patch('/users/:id/verify', AdminController.setVerificationStatus);
 router.get('/feeds/curation', AdminController.getFeedsCuration);
