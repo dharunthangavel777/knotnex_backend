@@ -10,6 +10,7 @@ export interface UserModel extends BaseModel {
   role: UserRole;
   isVerified: boolean;
   isBanned: boolean;
+  categorySelectionCompleted?: boolean;
   fcmToken?: string;
   lastLoginAt?: Date;
 }

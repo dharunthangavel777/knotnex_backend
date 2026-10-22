@@ -60,6 +60,7 @@ function rowToAuthUser(row: any): AuthUser {
     role: row.role as UserRole,
     isVerified: row.is_verified,
     avatarUrl: row.avatar_url,
+    categorySelectionCompleted: row.category_selection_completed ?? false,
     createdAt: row.created_at,
   };
 }
@@ -324,10 +325,12 @@ export class AuthService {
           firebaseUid: 'mock-admin-uid',
           email: 'admin@knotnex.com',
           fullName: 'Master Administrator',
+          phone: null,
+          avatarUrl: null,
           role: UserRole.ADMIN,
           isVerified: true,
-          isBanned: false,
-          createdAt: new Date().toISOString(),
+          categorySelectionCompleted: true,
+          createdAt: new Date(),
         };
         const tokens = await buildTokens(devAdmin);
         return { user: devAdmin, tokens };

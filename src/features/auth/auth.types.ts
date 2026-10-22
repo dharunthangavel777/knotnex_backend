@@ -17,6 +17,7 @@ export interface AuthUser {
   role: UserRole;
   isVerified: boolean;
   avatarUrl: string | null;
+  categorySelectionCompleted: boolean;
   createdAt: Date;
 }
 

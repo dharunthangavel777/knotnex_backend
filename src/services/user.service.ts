@@ -63,7 +63,7 @@ export class UserService {
 
   static async getUserById(id: string, currentUserId?: string) {
     const res = await query(
-      `SELECT u.id, u.firebase_uid, u.email, u.phone, u.full_name, u.avatar_url, u.role, u.is_verified, u.is_banned, u.created_at,
+      `SELECT u.id, u.firebase_uid, u.email, u.phone, u.full_name, u.avatar_url, u.role, u.is_verified, u.is_banned, u.category_selection_completed, u.created_at,
               p.bio, p.district, p.state, p.skills, p.languages, p.disability_type,
               (SELECT COUNT(*) FROM user_followers WHERE following_id = u.id) as followers_count,
               (SELECT COUNT(*) FROM user_followers WHERE follower_id = u.id) as following_count,

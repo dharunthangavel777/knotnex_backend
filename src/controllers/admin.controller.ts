@@ -58,6 +58,35 @@ export class AdminController {
     }
   }
 
+  static async listVerificationRequests(req: Request, res: Response) {
+    try {
+      const result = await AdminService.listVerificationRequests(req.query);
+      return ApiResponse.paginated(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async approveVerificationRequest(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.approveVerificationRequest(req.params.id, adminUserId);
+      return ApiResponse.success(res, result, 'Verification request approved and user upgraded to organization');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async rejectVerificationRequest(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.rejectVerificationRequest(req.params.id, adminUserId, req.body.reason);
+      return ApiResponse.success(res, result, 'Verification request rejected');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
   static async getTroubleshootingDeepLink(req: Request, res: Response) {
     return ApiResponse.success(res, {
       status: 'operational',

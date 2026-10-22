@@ -20,6 +20,7 @@ import searchRoutes from './search.routes';
 import uploadRoutes from './upload.routes';
 import analyticsRoutes from './analytics.routes';
 import adminRoutes from './admin.routes';
+import verificationRoutes from './verification.routes';
 import healthRoutes from './health.routes';
 
 const masterRouter = Router();
@@ -69,6 +70,9 @@ masterRouter.use('/media', uploadRoutes);
 
 // ─── Analytics ────────────────────────────────────────────────────────────────
 masterRouter.use('/analytics', analyticsRoutes);
+
+// ─── Verification & Category ──────────────────────────────────────────────────
+masterRouter.use('/verifications', verificationRoutes);
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
 masterRouter.use('/admin', adminRoutes);

@@ -13,6 +13,12 @@ router.patch('/users/:id/verify', AdminController.setVerificationStatus);
 router.get('/feeds/curation', AdminController.getFeedsCuration);
 router.patch('/feeds/:postId/action', AdminController.moderateFeedPost);
 router.patch('/organizations/:id/verify', AdminController.verifyOrganization);
+
+// Organization Verification Management
+router.get('/verifications', AdminController.listVerificationRequests);
+router.post('/verifications/:id/approve', AdminController.approveVerificationRequest);
+router.post('/verifications/:id/reject', AdminController.rejectVerificationRequest);
+
 router.get('/troubleshooting/deep-link', AdminController.getTroubleshootingDeepLink);
 
 export default router;
