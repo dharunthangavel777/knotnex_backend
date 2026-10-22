@@ -74,7 +74,7 @@ export class UploadController {
         const host = req.get('host') || 'knotnex-backend-389663780266.asia-south1.run.app';
         const protocol = req.protocol === 'http' && !req.get('x-forwarded-proto') ? 'http' : 'https';
         const uploadUrl = `${protocol}://${host}/api/v1/uploads/direct-put?folder=${folder}&fileName=${uniqueFileName}`;
-        const publicUrl = `${protocol}://${host}/uploads/${folder}/${uniqueFileName}`;
+        const publicUrl = `https://storage.googleapis.com/knotnex-media-prod/${folder}/${uniqueFileName}`;
         return ApiResponse.success(res, {
           uploadUrl,
           publicUrl,

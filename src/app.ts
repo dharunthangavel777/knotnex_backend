@@ -33,8 +33,12 @@ app.use(requestLogger);
 
 import path from 'path';
 
-// Serve uploaded static files
+// Serve uploaded static files with automatic GCS redirect fallback for stateless Cloud Run
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.get('/uploads/:folder/:fileName', (req: Request, res: Response) => {
+  const { folder, fileName } = req.params;
+  return res.redirect(302, `https://storage.googleapis.com/knotnex-media-prod/${folder}/${fileName}`);
+});
 
 // Rate limiting on API routes
 app.use('/api', apiRateLimiter);
