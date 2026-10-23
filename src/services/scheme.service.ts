@@ -4,6 +4,12 @@ import { SchemeStatus } from '../types/enums';
 
 export class SchemeService {
   static async createScheme(orgId: string | null, userId: string, data: any) {
+    const title = data.title || data.name || 'Untitled Scheme';
+    const providerName = data.providerName || data.provider || data.department || 'KnotNex Foundation';
+    const type = data.type || 'NGO';
+    const category = data.category || 'Welfare';
+    const description = data.description || 'Scheme details and welfare benefits for community members.';
+
     const res = await query(
       `INSERT INTO schemes (
         org_id, created_by, title, provider_name, type, category,
@@ -14,16 +20,16 @@ export class SchemeService {
       [
         orgId || null,
         userId,
-        data.title,
-        data.providerName,
-        data.type,
-        data.category,
-        data.description,
-        data.eligibilityCriteria || [],
+        title,
+        providerName,
+        type,
+        category,
+        description,
+        data.eligibilityCriteria || (data.eligibility ? [data.eligibility] : []),
         data.benefits || [],
-        data.documentsRequired || [],
-        data.applicationDeadline || null,
-        data.officialPortalUrl || null,
+        data.documentsRequired || data.documents || [],
+        data.applicationDeadline || data.deadline || null,
+        data.officialPortalUrl || data.portalUrl || null,
         data.status || SchemeStatus.ACTIVE,
       ]
     );

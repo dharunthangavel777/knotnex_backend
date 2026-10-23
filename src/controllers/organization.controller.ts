@@ -90,4 +90,40 @@ export class OrganizationController {
       return ApiResponse.error(res, error.message, 500);
     }
   }
+
+  static async getOrgEvents(req: Request, res: Response) {
+    try {
+      const result = await OrganizationService.getOrgEvents(req.params.id, req.query);
+      return ApiResponse.paginated(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async getOrgJobs(req: Request, res: Response) {
+    try {
+      const result = await OrganizationService.getOrgJobs(req.params.id, req.query);
+      return ApiResponse.paginated(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async getOrgSchemes(req: Request, res: Response) {
+    try {
+      const result = await OrganizationService.getOrgSchemes(req.params.id, req.query);
+      return ApiResponse.paginated(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async getOrgRegistrations(req: Request, res: Response) {
+    try {
+      const result = await OrganizationService.getOrgRegistrations(req.params.id, req.query);
+      return ApiResponse.paginated(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
 }

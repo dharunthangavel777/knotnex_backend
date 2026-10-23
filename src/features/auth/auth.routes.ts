@@ -117,4 +117,8 @@ router.post(
 // ─── Protected ───────────────────────────────────────────────────────────────
 router.get('/me', authenticate, AuthController.getMe);
 
+// ─── SSO (Web Portal Handoff) ────────────────────────────────────────────────
+router.post('/sso-exchange', authenticate, AuthController.ssoExchange);
+router.post('/sso-verify', AuthController.ssoVerify);
+
 export default router;

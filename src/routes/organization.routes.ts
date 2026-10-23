@@ -16,5 +16,9 @@ router.delete('/:id/follow', authenticate, OrganizationController.unfollowOrg);
 router.post('/:id/reviews', authenticate, validate(createReviewSchema), OrganizationController.addReview);
 router.get('/:id/reviews', optionalAuthenticate, OrganizationController.getReviews);
 router.get('/:id/dashboard', authenticate, OrganizationController.getDashboard);
+router.get('/:id/events', authenticate, OrganizationController.getOrgEvents);
+router.get('/:id/jobs', authenticate, OrganizationController.getOrgJobs);
+router.get('/:id/schemes', authenticate, OrganizationController.getOrgSchemes);
+router.get('/:id/registrations', authenticate, OrganizationController.getOrgRegistrations);
 
 export default router;

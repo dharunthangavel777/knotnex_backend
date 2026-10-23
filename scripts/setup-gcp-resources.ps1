@@ -74,6 +74,7 @@ $RUN_SA_EMAIL = "$RUN_SA@$PROJECT_ID.iam.gserviceaccount.com"
 gcloud iam service-accounts create $RUN_SA --display-name="KnotNex Cloud Run Service Account" 2>$null
 gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$RUN_SA_EMAIL" --role="roles/cloudsql.client"
 gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:$RUN_SA_EMAIL" --role="roles/storage.objectAdmin"
+gcloud iam service-accounts add-iam-policy-binding $RUN_SA_EMAIL --member="serviceAccount:$RUN_SA_EMAIL" --role="roles/iam.serviceAccountTokenCreator"
 
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host "🎉 Setup Complete! Run 'gcloud builds submit' to build and deploy." -ForegroundColor Green
