@@ -13,6 +13,16 @@ export class AdminController {
     }
   }
 
+  static async getUserDetails(req: Request, res: Response) {
+    try {
+      const user = await UserService.getUserById(req.params.id);
+      if (!user) return ApiResponse.error(res, 'User not found', 404, 'NOT_FOUND');
+      return ApiResponse.success(res, user);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
   static async setBanStatus(req: Request, res: Response) {
     try {
       const result = await AdminService.setBanStatus(req.params.id, req.body.isBanned);

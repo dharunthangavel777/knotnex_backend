@@ -7,6 +7,16 @@ import { FirebaseAuthIntegration } from '../integrations/firebase/auth.firebase'
 import { generateSlug } from '../utils/slug.util';
 import { logger } from '../config/logger';
 
+async function resolveReviewerId(adminUserId?: string): Promise<string | null> {
+  if (!adminUserId || adminUserId === 'admin') return null;
+  try {
+    const userCheck = await query(`SELECT id FROM users WHERE id = $1 LIMIT 1`, [adminUserId]);
+    return userCheck.rows.length > 0 ? adminUserId : null;
+  } catch {
+    return null;
+  }
+}
+
 function mapCategoryToOrgType(category: string): string {
   const cat = (category || '').toLowerCase();
   if (cat.includes('ngo') || cat.includes('non-profit')) return 'NGO';
@@ -145,7 +155,7 @@ export class AdminService {
    * 4. Updates Firebase custom claims.
    * 5. Sends an in-app and push notification to the user.
    */
-  static async approveVerificationRequest(requestId: string, adminUserId: string) {
+  static async approveVerificationRequest(requestId: string, adminUserId?: string) {
     // 1. Fetch request
     const reqRes = await query(
       `SELECT * FROM organization_verification_requests WHERE id = $1`,
@@ -157,12 +167,14 @@ export class AdminService {
     const request = reqRes.rows[0];
     const userId = request.user_id;
 
+    const reviewerId = await resolveReviewerId(adminUserId);
+
     // 2. Update request status to APPROVED
     await query(
       `UPDATE organization_verification_requests 
        SET status = 'APPROVED', reviewed_by = $1, updated_at = NOW() 
        WHERE id = $2`,
-      [adminUserId, requestId]
+      [reviewerId, requestId]
     );
 
     // 3. Elevate user role to 'organization' and mark verified
@@ -223,7 +235,7 @@ export class AdminService {
     
     await NotificationService.createNotification(
       userId,
-      adminUserId,
+      reviewerId,
       'org_approved',
       notifTitle,
       notifBody,
@@ -248,7 +260,7 @@ export class AdminService {
   /**
    * Rejects an organization verification request and notifies the applicant.
    */
-  static async rejectVerificationRequest(requestId: string, adminUserId: string, reason?: string) {
+  static async rejectVerificationRequest(requestId: string, adminUserId?: string, reason?: string) {
     const reqRes = await query(
       `SELECT * FROM organization_verification_requests WHERE id = $1`,
       [requestId]
@@ -258,11 +270,13 @@ export class AdminService {
     }
     const request = reqRes.rows[0];
 
+    const reviewerId = await resolveReviewerId(adminUserId);
+
     await query(
       `UPDATE organization_verification_requests 
        SET status = 'REJECTED', reviewed_by = $1, rejection_reason = $2, updated_at = NOW() 
        WHERE id = $3`,
-      [adminUserId, reason || null, requestId]
+      [reviewerId, reason || null, requestId]
     );
 
     const notifTitle = 'Organization Application Update';
@@ -272,7 +286,7 @@ export class AdminService {
 
     await NotificationService.createNotification(
       request.user_id,
-      adminUserId,
+      reviewerId,
       'org_rejected',
       notifTitle,
       notifBody,

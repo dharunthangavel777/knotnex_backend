@@ -5,6 +5,7 @@ import { ApiResponse } from '../utils/response.util';
 import { AuthenticatedUser } from '../types/interfaces';
 import { UserRole } from '../types/enums';
 import { logger } from '../config/logger';
+import { config } from '../config';
 import { verifyAccessToken } from '../shared/utils/jwt.util';
 
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
@@ -47,14 +48,30 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
     try {
       const decoded = verifyAccessToken(token);
       if (decoded.type === 'access') {
-        // Query DB directly (no Redis cache in low-cost architecture)
-        const userRes = await query(
-          'SELECT id, firebase_uid, email, role, is_verified, is_banned FROM users WHERE id = $1 LIMIT 1',
-          [decoded.sub]
-        );
+        let dbUser: any = null;
+        try {
+          const userRes = await query(
+            'SELECT id, firebase_uid, email, role, is_verified, is_banned FROM users WHERE id = $1 LIMIT 1',
+            [decoded.sub]
+          );
+          if (userRes.rowCount && userRes.rowCount > 0) {
+            dbUser = userRes.rows[0];
+          }
+        } catch (dbErr: any) {
+          if (config.env === 'development') {
+            logger.warn('[AuthMiddleware] DB query timed out/unreachable, authenticating from signed JWT payload');
+            dbUser = {
+              id: decoded.sub,
+              firebase_uid: decoded.uid,
+              email: decoded.email,
+              role: decoded.role,
+              is_verified: true,
+              is_banned: false,
+            };
+          }
+        }
 
-        if (userRes.rowCount && userRes.rowCount > 0) {
-          const dbUser = userRes.rows[0];
+        if (dbUser) {
           if (dbUser.is_banned) {
             return ApiResponse.error(res, 'Your account has been suspended', 403, 'ACCOUNT_BANNED');
           }
