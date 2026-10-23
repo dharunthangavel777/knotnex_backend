@@ -38,7 +38,7 @@ export class AdminService {
       return res.rows[0];
     } catch (dbErr: any) {
       if (config.env === 'development') {
-        const u = inMemoryUsers.find((user) => user.id === userId);
+        const u = inMemoryUsers.find((user: any) => user.id === userId);
         if (u) {
           u.is_banned = isBanned;
           u.status = isBanned ? 'Banned' : 'Active';
@@ -58,7 +58,7 @@ export class AdminService {
       return res.rows[0];
     } catch (dbErr: any) {
       if (config.env === 'development') {
-        const u = inMemoryUsers.find((user) => user.id === userId);
+        const u = inMemoryUsers.find((user: any) => user.id === userId);
         if (u) {
           u.is_verified = isVerified;
           return { id: u.id, full_name: u.full_name, email: u.email, is_verified: u.is_verified };

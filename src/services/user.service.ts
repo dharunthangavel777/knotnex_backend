@@ -5,6 +5,8 @@ import { NotificationService } from './notification.service';
 import { config } from '../config';
 import { logger } from '../config/logger';
 
+export const inMemoryUsers: any[] = [];
+
 export class UserService {
   static async listUsers(params: { page?: any; limit?: any; role?: string; search?: string; status?: string }) {
     const { page, limit, offset } = getPagination(params);
