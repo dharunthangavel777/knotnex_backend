@@ -38,7 +38,7 @@ export class AdminService {
       return res.rows[0];
     } catch (dbErr: any) {
       if (config.env === 'development') {
-        const u = inMemoryUsers.find((user) => user.id === userId);
+        const u = inMemoryUsers.find((user: any) => user.id === userId);
         if (u) {
           u.is_banned = isBanned;
           u.status = isBanned ? 'Banned' : 'Active';
@@ -58,7 +58,7 @@ export class AdminService {
       return res.rows[0];
     } catch (dbErr: any) {
       if (config.env === 'development') {
-        const u = inMemoryUsers.find((user) => user.id === userId);
+        const u = inMemoryUsers.find((user: any) => user.id === userId);
         if (u) {
           u.is_verified = isVerified;
           return { id: u.id, full_name: u.full_name, email: u.email, is_verified: u.is_verified };
@@ -128,23 +128,51 @@ export class AdminService {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const countRes = await query(
-      `SELECT COUNT(*) FROM organization_verification_requests r ${whereClause}`,
-      values
-    );
-    const total = parseInt(countRes.rows[0]?.count || '0', 10);
+    try {
+      const countRes = await query(
+        `SELECT COUNT(*) FROM organization_verification_requests r ${whereClause}`,
+        values
+      );
+      const total = parseInt(countRes.rows[0]?.count || '0', 10);
 
-    const rowsRes = await query(
-      `SELECT r.*, u.full_name as user_full_name, u.email as user_email, u.avatar_url as user_avatar, u.role as user_role
-       FROM organization_verification_requests r
-       JOIN users u ON u.id = r.user_id
-       ${whereClause}
-       ORDER BY r.created_at DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      [...values, limit, offset]
-    );
+      const rowsRes = await query(
+        `SELECT r.*, u.full_name as user_full_name, u.email as user_email, u.avatar_url as user_avatar, u.role as user_role
+         FROM organization_verification_requests r
+         JOIN users u ON u.id = r.user_id
+         ${whereClause}
+         ORDER BY r.created_at DESC
+         LIMIT $${idx++} OFFSET $${idx++}`,
+        [...values, limit, offset]
+      );
 
-    return buildPaginatedResult(rowsRes.rows, total, page, limit);
+      return buildPaginatedResult(rowsRes.rows, total, page, limit);
+    } catch (dbErr: any) {
+      if (config.env === 'development') {
+        const devRequests = inMemoryUsers
+          .filter((u: any) => u.verification_status === 'PENDING' || u.verification_request_id)
+          .map((u: any) => ({
+            id: u.verification_request_id || `vr-${u.id}`,
+            user_id: u.id,
+            organization_name: u.organization_name || u.full_name,
+            category: u.organization_category || 'NGO',
+            organization_email: u.organization_email || u.email,
+            phone: u.organization_phone || u.phone,
+            website: u.organization_website || 'https://knotnex.com',
+            status: u.verification_status || 'PENDING',
+            created_at: u.created_at,
+            user_full_name: u.full_name,
+            user_email: u.email,
+            user_avatar: u.avatar_url,
+            user_role: u.role,
+          }));
+        let filtered = devRequests;
+        if (params.status) {
+          filtered = devRequests.filter((r: any) => r.status.toLowerCase() === params.status?.toLowerCase());
+        }
+        return buildPaginatedResult(filtered.slice(offset, offset + limit), filtered.length, page, limit);
+      }
+      throw dbErr;
+    }
   }
 
   /**
