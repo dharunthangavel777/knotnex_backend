@@ -106,4 +106,14 @@ export class UserController {
       return ApiResponse.error(res, error.message, 500);
     }
   }
+
+  static async getMyOrganization(req: Request, res: Response) {
+    try {
+      const userId = req.user!.id;
+      const org = await UserService.getMyOrganization(userId);
+      return ApiResponse.success(res, org, org ? 'Organization fetched' : 'No organization associated with this account');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
 }

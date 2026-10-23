@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+import { SsoService } from '../../services/sso.service';
 import { ApiResponse } from '../../utils/response.util';
 import { logger } from '../../config/logger';
 
@@ -166,6 +167,31 @@ export class AuthController {
       return ApiResponse.success(res, { user }, 'User profile fetched.');
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 404, 'USER_NOT_FOUND');
+    }
+  }
+
+  // POST /auth/sso-exchange
+  static async ssoExchange(req: Request, res: Response) {
+    try {
+      const userId = req.user!.id;
+      const { orgId } = req.body || {};
+      const result = await SsoService.createExchangeCode(userId, orgId);
+      return ApiResponse.success(res, result, 'SSO code generated');
+    } catch (error: any) {
+      logger.warn('[AuthController] ssoExchange error', { error: error.message });
+      return ApiResponse.error(res, error.message, 400, 'SSO_EXCHANGE_FAILED');
+    }
+  }
+
+  // POST /auth/sso-verify
+  static async ssoVerify(req: Request, res: Response) {
+    try {
+      const { code } = req.body;
+      const result = await SsoService.verifyExchangeCode(code);
+      return ApiResponse.success(res, result, 'SSO authenticated successfully');
+    } catch (error: any) {
+      logger.warn('[AuthController] ssoVerify error', { error: error.message });
+      return ApiResponse.error(res, error.message, 401, 'SSO_VERIFICATION_FAILED');
     }
   }
 }

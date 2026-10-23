@@ -5,7 +5,15 @@ import { EventStatus } from '../types/enums';
 
 export class EventService {
   static async createEvent(orgId: string, userId: string, data: any) {
-    const slug = generateSlug(data.title);
+    const title = data.title || data.name || 'Untitled Event';
+    const slug = generateSlug(title);
+    const coverUrl = data.coverUrl || data.poster || null;
+    const eventDate = data.eventDate || data.date || new Date().toISOString().split('T')[0];
+    const venueName = data.venueName || data.location || null;
+    const detailedDescription = data.detailedDescription || data.description || null;
+    const shortDescription = data.shortDescription || (detailedDescription ? detailedDescription.substring(0, 160) : null);
+    const ticketPrice = data.ticketPrice !== undefined ? (typeof data.ticketPrice === 'number' ? data.ticketPrice : parseFloat(String(data.ticketPrice).replace(/[^0-9.]/g, '')) || 0) : 0;
+    const isFree = data.isFree !== undefined ? data.isFree : ticketPrice === 0;
 
     const res = await query(
       `INSERT INTO events (
@@ -24,21 +32,21 @@ export class EventService {
       [
         orgId,
         userId,
-        data.title,
+        title,
         slug,
-        data.category,
-        data.type,
-        data.coverUrl || null,
-        data.shortDescription || null,
-        data.detailedDescription || null,
+        data.category || 'General',
+        data.type || 'In-Person',
+        coverUrl,
+        shortDescription,
+        detailedDescription,
         data.language || 'English',
-        data.eventDate,
-        data.startTime || null,
+        eventDate,
+        data.startTime || data.time || null,
         data.endTime || null,
         data.timezone || 'Asia/Kolkata',
         data.registrationOpens || null,
         data.registrationDeadline || null,
-        data.venueName || null,
+        venueName,
         data.address || null,
         data.district || null,
         data.state || null,
@@ -49,9 +57,9 @@ export class EventService {
         data.signLanguage || false,
         data.brailleMaterial || false,
         data.capacity || null,
-        data.isFree !== undefined ? data.isFree : true,
-        data.ticketPrice || 0,
-        data.status || EventStatus.DRAFT,
+        isFree,
+        ticketPrice,
+        data.status || EventStatus.UPCOMING,
         data.eligibility || [],
         JSON.stringify(data.sponsors || []),
         data.gallery || [],
@@ -128,6 +136,15 @@ export class EventService {
   }
 
   static async updateEvent(id: string, data: any) {
+    if (data.name && !data.title) data.title = data.name;
+    if (data.poster && !data.coverUrl) data.coverUrl = data.poster;
+    if (data.date && !data.eventDate) data.eventDate = data.date;
+    if (data.location && !data.venueName) data.venueName = data.location;
+    if (data.description && !data.detailedDescription) data.detailedDescription = data.description;
+    if (data.ticketPrice !== undefined && typeof data.ticketPrice === 'string') {
+      data.ticketPrice = parseFloat(data.ticketPrice.replace(/[^0-9.]/g, '')) || 0;
+    }
+
     const allowed = [
       'title', 'category', 'type', 'cover_url', 'short_description', 'detailed_description',
       'language', 'event_date', 'start_time', 'end_time', 'timezone', 'venue_name', 'address',

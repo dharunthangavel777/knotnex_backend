@@ -9,6 +9,7 @@ router.get('/', authenticate, UserController.listUsers);
 router.get('/profile', authenticate, UserController.getProfile);
 router.put('/profile', authenticate, UserController.updateProfile);
 router.patch('/profile', authenticate, UserController.updateProfile);
+router.get('/me/organization', authenticate, UserController.getMyOrganization);
 router.get('/:id', optionalAuthenticate, UserController.getUserById);
 router.patch('/:id', authenticate, UserController.updateUser);
 router.post('/:id/follow', authenticate, UserController.followUser);

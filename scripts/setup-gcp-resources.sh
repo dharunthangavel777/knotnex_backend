@@ -146,6 +146,11 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$RUN_SA_EMAIL" \
   --role="roles/storage.objectAdmin" >/dev/null
 
+# Grant Token Creator for direct signed URLs
+gcloud iam service-accounts add-iam-policy-binding "$RUN_SA_EMAIL" \
+  --member="serviceAccount:$RUN_SA_EMAIL" \
+  --role="roles/iam.serviceAccountTokenCreator" >/dev/null
+
 echo "✅ IAM permissions granted to $RUN_SA_EMAIL."
 
 # ─── 6. Deploy Cloud Run Service (Low-Cost High-Performance Spec) ─────────────

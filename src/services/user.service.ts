@@ -5,6 +5,7 @@ import { NotificationService } from './notification.service';
 import { config } from '../config';
 import { logger } from '../config/logger';
 
+<<<<<<< HEAD
 export interface InMemoryUser {
   id: string;
   firebase_uid: string;
@@ -111,6 +112,9 @@ export const inMemoryUsers: InMemoryUser[] = [
     status: 'Banned',
   },
 ];
+=======
+export const inMemoryUsers: any[] = [];
+>>>>>>> 4bde68116db4d53b1e128d4fcc3d3178879467aa
 
 export class UserService {
   static async listUsers(params: { page?: any; limit?: any; role?: string; search?: string; status?: string }) {
@@ -447,5 +451,48 @@ export class UserService {
   static async removeUserDevice(userId: string, deviceId: string) {
     await query(`DELETE FROM user_devices WHERE user_id = $1 AND id = $2`, [userId, deviceId]);
     return { success: true };
+  }
+
+  static async getMyOrganization(userId: string) {
+    try {
+      const res = await query(
+        `SELECT o.*,
+                (SELECT COUNT(*) FROM events e WHERE e.org_id = o.id) AS total_events,
+                (SELECT COUNT(*) FROM jobs j WHERE j.org_id = o.id) AS total_jobs,
+                (SELECT COUNT(*) FROM schemes s WHERE s.org_id = o.id) AS total_schemes
+         FROM organizations o
+         WHERE o.owner_id = $1 OR o.id IN (SELECT org_id FROM org_team_members WHERE user_id = $1)
+         LIMIT 1`,
+        [userId]
+      );
+      if (res.rows.length > 0) {
+        return res.rows[0];
+      }
+      return null;
+    } catch (err: any) {
+      if (config.env === 'development') {
+        logger.warn('[UserService] DB unreachable, returning fallback mock org for dev');
+        return {
+          id: '00000000-0000-0000-0000-000000000001',
+          owner_id: userId,
+          name: 'KnotNex Accessible Foundation',
+          slug: 'knotnex-accessible-foundation',
+          type: 'NGO',
+          about: 'Dedicated to empowering specially-abled individuals with accessible opportunities.',
+          mission: 'Equal opportunities for all.',
+          vision: 'An inclusive barrier-free world.',
+          services: ['Assistive Tech Training', 'Community Engagement', 'Career Placement'],
+          is_verified: true,
+          followers_count: 1420,
+          contact_email: 'contact@knotnex.org',
+          contact_phone: '+91 98401 12345',
+          website: 'https://knotnex.org',
+          total_events: 5,
+          total_jobs: 3,
+          total_schemes: 2,
+        };
+      }
+      throw err;
+    }
   }
 }

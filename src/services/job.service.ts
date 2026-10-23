@@ -4,6 +4,16 @@ import { JobStatus } from '../types/enums';
 
 export class JobService {
   static async createJob(orgId: string, userId: string, data: any) {
+    const title = data.title || data.role || 'Untitled Opportunity';
+    const department = data.department || data.dept || 'General';
+    const type = data.type ? data.type.toLowerCase().replace(' ', '-') : 'full-time';
+    const locationType = data.locationType || (data.location && data.location.toLowerCase().includes('remote') ? 'remote' : 'on-site');
+    const location = data.location || 'Remote';
+    const description = data.description || 'Job details and opportunities provided by KnotNex partner.';
+    const requirements = Array.isArray(data.requirements) ? data.requirements : (Array.isArray(data.skills) ? data.skills : []);
+    const responsibilities = Array.isArray(data.responsibilities) ? data.responsibilities : [];
+    const accommodations = Array.isArray(data.disabilityAccommodations) ? data.disabilityAccommodations : (Array.isArray(data.accommodations) ? data.accommodations : []);
+
     const res = await query(
       `INSERT INTO jobs (
         org_id, created_by, title, department, type, location_type, location,
@@ -15,20 +25,20 @@ export class JobService {
       [
         orgId,
         userId,
-        data.title,
-        data.department || null,
-        data.type,
-        data.locationType,
-        data.location || null,
-        data.description,
-        data.requirements || [],
-        data.responsibilities || [],
-        data.disabilityAccommodations || [],
+        title,
+        department,
+        type,
+        locationType,
+        location,
+        description,
+        requirements,
+        responsibilities,
+        accommodations,
         data.minSalary || null,
         data.maxSalary || null,
         data.currency || 'INR',
-        data.experienceLevel || null,
-        data.educationLevel || null,
+        data.experienceLevel || data.experience || null,
+        data.educationLevel || data.education || null,
         data.deadline || null,
         data.status || JobStatus.OPEN,
       ]

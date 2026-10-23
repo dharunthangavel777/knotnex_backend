@@ -146,4 +146,113 @@ export class OrganizationService {
     );
     return res.rows;
   }
+
+  static async getOrgEvents(orgId: string, params: { page?: any; limit?: any; status?: string }) {
+    const { page, limit, offset } = getPagination(params);
+
+    try {
+      const countRes = await query(`SELECT COUNT(*) FROM events WHERE org_id = $1`, [orgId]);
+      const total = parseInt(countRes.rows[0].count, 10);
+
+      const res = await query(
+        `SELECT e.*,
+                COALESCE((SELECT COUNT(*) FROM event_registrations r WHERE r.event_id = e.id), 0) AS registration_count,
+                COALESCE((SELECT COUNT(*) FROM event_registrations r WHERE r.event_id = e.id AND r.checked_in_at IS NOT NULL), 0) AS checked_in_count
+         FROM events e
+         WHERE e.org_id = $1
+         ORDER BY e.event_date DESC, e.created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [orgId, limit, offset]
+      );
+
+      return buildPaginatedResult(res.rows, total, page, limit);
+    } catch (err: any) {
+      return buildPaginatedResult([], 0, page, limit);
+    }
+  }
+
+  static async getOrgJobs(orgId: string, params: { page?: any; limit?: any; status?: string }) {
+    const { page, limit, offset } = getPagination(params);
+
+    try {
+      const countRes = await query(`SELECT COUNT(*) FROM jobs WHERE org_id = $1`, [orgId]);
+      const total = parseInt(countRes.rows[0].count, 10);
+
+      const res = await query(
+        `SELECT j.*,
+                COALESCE((SELECT COUNT(*) FROM job_applications a WHERE a.job_id = j.id), 0) AS applications_count
+         FROM jobs j
+         WHERE j.org_id = $1
+         ORDER BY j.created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [orgId, limit, offset]
+      );
+
+      return buildPaginatedResult(res.rows, total, page, limit);
+    } catch (err: any) {
+      return buildPaginatedResult([], 0, page, limit);
+    }
+  }
+
+  static async getOrgSchemes(orgId: string, params: { page?: any; limit?: any }) {
+    const { page, limit, offset } = getPagination(params);
+
+    try {
+      const countRes = await query(`SELECT COUNT(*) FROM schemes WHERE org_id = $1`, [orgId]);
+      const total = parseInt(countRes.rows[0].count, 10);
+
+      const res = await query(
+        `SELECT s.*,
+                COALESCE((SELECT COUNT(*) FROM scheme_applications sa WHERE sa.scheme_id = s.id), 0) AS applications_count
+         FROM schemes s
+         WHERE s.org_id = $1
+         ORDER BY s.created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [orgId, limit, offset]
+      );
+
+      return buildPaginatedResult(res.rows, total, page, limit);
+    } catch (err: any) {
+      return buildPaginatedResult([], 0, page, limit);
+    }
+  }
+
+  static async getOrgRegistrations(orgId: string, params: { page?: any; limit?: any; status?: string; search?: string }) {
+    const { page, limit, offset } = getPagination(params);
+
+    try {
+      const countRes = await query(
+        `SELECT COUNT(*)
+         FROM event_registrations r
+         JOIN events e ON r.event_id = e.id
+         WHERE e.org_id = $1`,
+        [orgId]
+      );
+      const total = parseInt(countRes.rows[0].count, 10);
+
+      const res = await query(
+        `SELECT r.*,
+                e.title AS event_title,
+                e.event_date,
+                e.start_time,
+                e.venue_name,
+                e.ticket_price,
+                e.is_free,
+                u.full_name AS user_name,
+                u.avatar_url AS user_avatar,
+                u.email AS user_email
+         FROM event_registrations r
+         JOIN events e ON r.event_id = e.id
+         LEFT JOIN users u ON r.user_id = u.id
+         WHERE e.org_id = $1
+         ORDER BY r.created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [orgId, limit, offset]
+      );
+
+      return buildPaginatedResult(res.rows, total, page, limit);
+    } catch (err: any) {
+      return buildPaginatedResult([], 0, page, limit);
+    }
+  }
 }
