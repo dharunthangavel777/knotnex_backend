@@ -8,7 +8,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS category_selection_completed BOOLEAN 
 
 -- 2. Create organization_verification_requests table
 CREATE TABLE IF NOT EXISTS organization_verification_requests (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id                  UUID PRIMARY KEY
+     DEFAULT gen_random_uuid(),
     user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     organization_name   VARCHAR(255) NOT NULL,
     category            VARCHAR(100) NOT NULL,
@@ -27,3 +28,4 @@ CREATE TABLE IF NOT EXISTS organization_verification_requests (
 CREATE INDEX IF NOT EXISTS idx_org_verifications_user ON organization_verification_requests(user_id);
 CREATE INDEX IF NOT EXISTS idx_org_verifications_status ON organization_verification_requests(status);
 CREATE INDEX IF NOT EXISTS idx_org_verifications_created ON organization_verification_requests(created_at DESC);
+
