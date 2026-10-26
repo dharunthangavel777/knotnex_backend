@@ -5,7 +5,6 @@ import { NotificationService } from './notification.service';
 import { config } from '../config';
 import { logger } from '../config/logger';
 
-<<<<<<< HEAD
 export interface InMemoryUser {
   id: string;
   firebase_uid: string;
@@ -112,9 +111,6 @@ export const inMemoryUsers: InMemoryUser[] = [
     status: 'Banned',
   },
 ];
-=======
-export const inMemoryUsers: any[] = [];
->>>>>>> 4bde68116db4d53b1e128d4fcc3d3178879467aa
 
 export class UserService {
   static async listUsers(params: { page?: any; limit?: any; role?: string; search?: string; status?: string }) {
