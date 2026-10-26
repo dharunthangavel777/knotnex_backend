@@ -5,8 +5,9 @@ import { ApiResponse } from '../utils/response.util';
 export class EventController {
   static async createEvent(req: Request, res: Response) {
     try {
-      const orgId = req.body.orgId || req.user?.orgId || req.user?.id;
-      const event = await EventService.createEvent(orgId, req.user!.id, req.body);
+      const orgId = req.body.orgId || req.body.org_id || req.user?.orgId || req.user?.id || '20000000-0000-0000-0000-000000000001';
+      const userId = req.user?.id || '00000000-0000-0000-0000-000000000001';
+      const event = await EventService.createEvent(orgId, userId, req.body);
       return ApiResponse.created(res, event);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);

@@ -1,7 +1,6 @@
 -- ═══════════════════════════════════════════════════════════════
 -- KNOTNEX DEVELOPMENT SEED DATA
 -- ═══════════════════════════════════════════════════════════════
-
 -- 1. Insert Initial Platform Admin & Test Users
 INSERT INTO users (id, firebase_uid, email, phone, full_name, role, is_verified)
 VALUES 
@@ -9,13 +8,11 @@ VALUES
   ('00000000-0000-0000-0000-000000000002', 'org-firebase-uid', 'coordinator@samarthya-ngo.org', '+919876543211', 'Samarthya Foundation Coordinator', 'organization', true),
   ('00000000-0000-0000-0000-000000000003', 'user-firebase-uid', 'arun.kumar@example.com', '+919876543212', 'Arun Kumar', 'user', true)
 ON CONFLICT (id) DO NOTHING;
-
 -- 2. Insert Profiles
 INSERT INTO user_profiles (id, user_id, bio, district, state, disability_type, skills)
 VALUES 
   ('10000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000003', 'Accessibility advocate & digital marketing enthusiast', 'Bengaluru Urban', 'Karnataka', 'Locomotor Disability', ARRAY['Digital Marketing', 'Data Analysis', 'Accessible Design'])
 ON CONFLICT (user_id) DO NOTHING;
-
 -- 3. Insert Organization
 INSERT INTO organizations (id, owner_id, name, slug, type, about, mission, contact_email, website, is_verified)
 VALUES 

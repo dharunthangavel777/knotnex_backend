@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { AdminService } from '../services/admin.service';
 import { UserService } from '../services/user.service';
+import { EventService } from '../services/event.service';
 import { ApiResponse } from '../utils/response.util';
 
 export class AdminController {
@@ -92,6 +93,24 @@ export class AdminController {
       const adminUserId = (req as any).user?.id || 'admin';
       const result = await AdminService.rejectVerificationRequest(req.params.id, adminUserId, req.body.reason);
       return ApiResponse.success(res, result, 'Verification request rejected');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async approveEvent(req: Request, res: Response) {
+    try {
+      const event = await EventService.updateEvent(req.params.id, { status: 'published' });
+      return ApiResponse.success(res, event, 'Event approved and published');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async rejectEvent(req: Request, res: Response) {
+    try {
+      const event = await EventService.updateEvent(req.params.id, { status: 'cancelled' });
+      return ApiResponse.success(res, event, 'Event rejected');
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);
     }

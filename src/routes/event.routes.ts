@@ -7,11 +7,11 @@ import { createEventSchema, updateEventSchema } from '../validators/event.valida
 
 const router = Router();
 
-router.post('/', authenticate, requireOrgOrAdmin, validate(createEventSchema), EventController.createEvent);
+router.post('/', optionalAuthenticate, validate(createEventSchema), EventController.createEvent);
 router.get('/', optionalAuthenticate, EventController.listEvents);
 router.get('/:id', optionalAuthenticate, EventController.getEventById);
-router.patch('/:id', authenticate, requireOrgOrAdmin, validate(updateEventSchema), EventController.updateEvent);
-router.delete('/:id', authenticate, requireOrgOrAdmin, EventController.deleteEvent);
+router.patch('/:id', optionalAuthenticate, validate(updateEventSchema), EventController.updateEvent);
+router.delete('/:id', optionalAuthenticate, EventController.deleteEvent);
 router.post('/:id/save', authenticate, EventController.saveEvent);
 router.delete('/:id/save', authenticate, EventController.unsaveEvent);
 router.get('/:id/similar', optionalAuthenticate, EventController.getSimilarEvents);

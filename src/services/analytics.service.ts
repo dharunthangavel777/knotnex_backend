@@ -44,31 +44,6 @@ export class AnalyticsService {
   static async getOrgDashboard(orgId: string) {
     try {
       const events = await query(`SELECT COUNT(*) FROM events WHERE org_id = $1`, [orgId]);
-<<<<<<< HEAD
-      const jobs = await query(`SELECT COUNT(*) FROM jobs WHERE org_id = $1`, [orgId]);
-      const applications = await query(
-        `SELECT COUNT(*) FROM job_applications a JOIN jobs j ON a.job_id = j.id WHERE j.org_id = $1`,
-        [orgId]
-      );
-      const followers = await query(`SELECT followers_count FROM organizations WHERE id = $1`, [orgId]);
-
-      return {
-        totalEvents: parseInt(events.rows[0].count, 10),
-        totalJobs: parseInt(jobs.rows[0].count, 10),
-        totalApplications: parseInt(applications.rows[0].count, 10),
-        totalFollowers: followers.rows[0]?.followers_count || 0,
-      };
-    } catch (dbErr: any) {
-      if (config.env === 'development') {
-        return {
-          totalEvents: 12,
-          totalJobs: 5,
-          totalApplications: 34,
-          totalFollowers: 86,
-        };
-      }
-      throw dbErr;
-=======
       const upcomingEvents = await query(`SELECT COUNT(*) FROM events WHERE org_id = $1 AND event_date > CURRENT_DATE`, [orgId]);
       const ongoingEvents = await query(`SELECT COUNT(*) FROM events WHERE org_id = $1 AND event_date = CURRENT_DATE`, [orgId]);
 
@@ -127,7 +102,6 @@ export class AnalyticsService {
         totalCheckedIn: 18,
         totalFollowers: 1420,
       };
->>>>>>> 4bde68116db4d53b1e128d4fcc3d3178879467aa
     }
   }
 
