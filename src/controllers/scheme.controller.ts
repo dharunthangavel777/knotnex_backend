@@ -67,4 +67,37 @@ export class SchemeController {
       return ApiResponse.error(res, error.message, 500);
     }
   }
+
+  static async getApplicationById(req: Request, res: Response) {
+    try {
+      const app = await SchemeService.getApplicationById(req.params.appId || req.params.id);
+      if (!app) return ApiResponse.error(res, 'Application not found', 404, 'NOT_FOUND');
+      return ApiResponse.success(res, app);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async updateApplicationStatus(req: Request, res: Response) {
+    try {
+      const appId = req.params.appId || req.params.id;
+      const { status, stage, reviewerNotes } = req.body;
+      const updated = await SchemeService.updateApplicationStatus(appId, status, stage, reviewerNotes);
+      return ApiResponse.success(res, updated, 'Application status updated');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async getOrgSchemeApplications(req: Request, res: Response) {
+    try {
+      const orgId = req.params.orgId || req.params.id || req.user?.orgId;
+      if (!orgId) return ApiResponse.error(res, 'Organization ID is required', 400);
+      const applications = await SchemeService.getOrgSchemeApplications(orgId);
+      return ApiResponse.success(res, applications);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
 }
+

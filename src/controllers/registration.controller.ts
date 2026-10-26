@@ -1,8 +1,28 @@
 import { Request, Response } from 'express';
 import { RegistrationService } from '../services/registration.service';
+import { OrganizationService } from '../services/organization.service';
 import { ApiResponse } from '../utils/response.util';
 
 export class RegistrationController {
+  static async listAll(req: Request, res: Response) {
+    try {
+      const orgId = (req.query.org_id || req.query.orgId || req.user?.orgId) as string;
+      const eventId = req.query.eventId as string;
+      if (eventId) {
+        const registrants = await RegistrationService.listRegistrationsByEvent(eventId);
+        return ApiResponse.success(res, registrants);
+      }
+      if (orgId) {
+        const result = await OrganizationService.getOrgRegistrations(orgId, req.query);
+        return ApiResponse.paginated(res, result);
+      }
+      const myEvents = await RegistrationService.listRegistrationsByUser(req.user!.id);
+      return ApiResponse.success(res, myEvents);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
   static async register(req: Request, res: Response) {
     try {
       const registration = await RegistrationService.registerForEvent(req.user!.id, req.body);

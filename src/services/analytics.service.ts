@@ -55,6 +55,17 @@ export class AnalyticsService {
 
       const followers = await query(`SELECT followers_count FROM organizations WHERE id = $1`, [orgId]);
 
+      let campaignsCount = 0;
+      let achievementsCount = 0;
+      try {
+        const camp = await query(`SELECT COUNT(*) FROM org_campaigns WHERE org_id = $1`, [orgId]);
+        campaignsCount = parseInt(camp.rows[0]?.count || '0', 10);
+      } catch (_) {}
+      try {
+        const ach = await query(`SELECT COUNT(*) FROM org_achievements WHERE org_id = $1`, [orgId]);
+        achievementsCount = parseInt(ach.rows[0]?.count || '0', 10);
+      } catch (_) {}
+
       return {
         totalEvents: parseInt(events.rows[0]?.count || '0', 10),
         upcomingEvents: parseInt(upcomingEvents.rows[0]?.count || '0', 10),
@@ -68,6 +79,8 @@ export class AnalyticsService {
         totalRegistrations: parseInt(registrations.rows[0]?.count || '0', 10),
         totalCheckedIn: parseInt(checkedIn.rows[0]?.count || '0', 10),
         totalFollowers: followers.rows[0]?.followers_count || 0,
+        totalCampaigns: campaignsCount,
+        totalAchievements: achievementsCount,
       };
     } catch (err) {
       return {

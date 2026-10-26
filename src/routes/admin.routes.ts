@@ -20,6 +20,22 @@ router.get('/verifications', AdminController.listVerificationRequests);
 router.post('/verifications/:id/approve', AdminController.approveVerificationRequest);
 router.post('/verifications/:id/reject', AdminController.rejectVerificationRequest);
 
+// Organization Content Verification (Events, Jobs, Schemes)
+router.get('/pending-content', AdminController.listPendingContent);
+router.get('/verifications/pending-items', AdminController.listPendingContent);
+
+router.post('/events/:id/verify', AdminController.verifyEvent);
+router.post('/events/:id/approve', AdminController.verifyEvent);
+router.post('/events/:id/reject', AdminController.rejectEvent);
+
+router.post('/jobs/:id/verify', AdminController.verifyJob);
+router.post('/jobs/:id/approve', AdminController.verifyJob);
+router.post('/jobs/:id/reject', AdminController.rejectJob);
+
+router.post('/schemes/:id/verify', AdminController.verifyScheme);
+router.post('/schemes/:id/approve', AdminController.verifyScheme);
+router.post('/schemes/:id/reject', AdminController.rejectScheme);
+
 router.get('/troubleshooting/deep-link', AdminController.getTroubleshootingDeepLink);
 
 export default router;

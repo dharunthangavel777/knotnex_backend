@@ -162,7 +162,7 @@ export class AuthController {
   // GET /auth/me
   static async getMe(req: Request, res: Response) {
     try {
-      const userId = req.user!.id;
+      const userId = (req as any).user?.id;
       const user = await AuthService.getMe(userId);
       return ApiResponse.success(res, { user }, 'User profile fetched.');
     } catch (error: any) {
@@ -173,7 +173,7 @@ export class AuthController {
   // POST /auth/sso-exchange
   static async ssoExchange(req: Request, res: Response) {
     try {
-      const userId = req.user!.id;
+      const userId = (req as any).user?.id;
       const { orgId } = req.body || {};
       const result = await SsoService.createExchangeCode(userId, orgId);
       return ApiResponse.success(res, result, 'SSO code generated');

@@ -15,7 +15,8 @@ export class ApplicationController {
 
   static async listByJob(req: Request, res: Response) {
     try {
-      const applications = await ApplicationService.listApplicationsByJob(req.params.jobId);
+      const jobId = req.params.jobId || req.params.id;
+      const applications = await ApplicationService.listApplicationsByJob(jobId);
       return ApiResponse.success(res, applications);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);
@@ -43,7 +44,8 @@ export class ApplicationController {
 
   static async updateStage(req: Request, res: Response) {
     try {
-      const updated = await ApplicationService.updateStage(req.params.id, req.body.stage, req.body.reviewerNotes);
+      const appId = req.params.appId || req.params.id;
+      const updated = await ApplicationService.updateStage(appId, req.body.stage, req.body.reviewerNotes);
       return ApiResponse.success(res, updated, 'Stage updated');
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);

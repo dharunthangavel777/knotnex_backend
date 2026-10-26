@@ -110,4 +110,75 @@ export class AdminController {
       timestamp: new Date(),
     });
   }
+
+  // ─── Organization Content Verification ──────────────────────────────────────────
+
+  static async listPendingContent(req: Request, res: Response) {
+    try {
+      const result = await AdminService.listPendingContent();
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async verifyEvent(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.verifyEvent(req.params.id, adminUserId);
+      return ApiResponse.success(res, result, 'Event verified and published successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async rejectEvent(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.rejectEvent(req.params.id, adminUserId, req.body.reason);
+      return ApiResponse.success(res, result, 'Event rejected');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async verifyJob(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.verifyJob(req.params.id, adminUserId);
+      return ApiResponse.success(res, result, 'Job verified and published successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async rejectJob(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.rejectJob(req.params.id, adminUserId, req.body.reason);
+      return ApiResponse.success(res, result, 'Job rejected');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async verifyScheme(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.verifyScheme(req.params.id, adminUserId);
+      return ApiResponse.success(res, result, 'Scheme verified and published successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async rejectScheme(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.rejectScheme(req.params.id, adminUserId, req.body.reason);
+      return ApiResponse.success(res, result, 'Scheme rejected');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
 }
