@@ -2,6 +2,9 @@ import { query } from '../config/database';
 import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
 import { config } from '../config';
 import { inMemoryUsers } from './user.service';
+import { inMemoryEvents } from './event.service';
+import { inMemoryJobs } from './job.service';
+import { inMemorySchemes } from './scheme.service';
 import { NotificationService } from './notification.service';
 import { FirebaseAuthIntegration } from '../integrations/firebase/auth.firebase';
 import { generateSlug } from '../utils/slug.util';
@@ -128,51 +131,23 @@ export class AdminService {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    try {
-      const countRes = await query(
-        `SELECT COUNT(*) FROM organization_verification_requests r ${whereClause}`,
-        values
-      );
-      const total = parseInt(countRes.rows[0]?.count || '0', 10);
+    const countRes = await query(
+      `SELECT COUNT(*) FROM organization_verification_requests r ${whereClause}`,
+      values
+    );
+    const total = parseInt(countRes.rows[0]?.count || '0', 10);
 
-      const rowsRes = await query(
-        `SELECT r.*, u.full_name as user_full_name, u.email as user_email, u.avatar_url as user_avatar, u.role as user_role
-         FROM organization_verification_requests r
-         JOIN users u ON u.id = r.user_id
-         ${whereClause}
-         ORDER BY r.created_at DESC
-         LIMIT $${idx++} OFFSET $${idx++}`,
-        [...values, limit, offset]
-      );
+    const rowsRes = await query(
+      `SELECT r.*, u.full_name as user_full_name, u.email as user_email, u.avatar_url as user_avatar, u.role as user_role
+       FROM organization_verification_requests r
+       JOIN users u ON u.id = r.user_id
+       ${whereClause}
+       ORDER BY r.created_at DESC
+       LIMIT $${idx++} OFFSET $${idx++}`,
+      [...values, limit, offset]
+    );
 
-      return buildPaginatedResult(rowsRes.rows, total, page, limit);
-    } catch (dbErr: any) {
-      if (config.env === 'development') {
-        const devRequests = inMemoryUsers
-          .filter((u: any) => u.verification_status === 'PENDING' || u.verification_request_id)
-          .map((u: any) => ({
-            id: u.verification_request_id || `vr-${u.id}`,
-            user_id: u.id,
-            organization_name: u.organization_name || u.full_name,
-            category: u.organization_category || 'NGO',
-            organization_email: u.organization_email || u.email,
-            phone: u.organization_phone || u.phone,
-            website: u.organization_website || 'https://knotnex.com',
-            status: u.verification_status || 'PENDING',
-            created_at: u.created_at,
-            user_full_name: u.full_name,
-            user_email: u.email,
-            user_avatar: u.avatar_url,
-            user_role: u.role,
-          }));
-        let filtered = devRequests;
-        if (params.status) {
-          filtered = devRequests.filter((r: any) => r.status.toLowerCase() === params.status?.toLowerCase());
-        }
-        return buildPaginatedResult(filtered.slice(offset, offset + limit), filtered.length, page, limit);
-      }
-      throw dbErr;
-    }
+    return buildPaginatedResult(rowsRes.rows, total, page, limit);
   }
 
   /**
@@ -331,6 +306,266 @@ export class AdminService {
       status: 'REJECTED',
       reason,
     };
+  }
+
+  /**
+   * Content Verification System for Events, Jobs, and Schemes
+   */
+  static async listPendingContent() {
+    try {
+      const [eventsRes, jobsRes, schemesRes] = await Promise.all([
+        query(`SELECT e.*, o.name as org_name, o.logo_url as org_logo FROM events e LEFT JOIN organizations o ON e.org_id = o.id WHERE e.status = 'pending_verification' ORDER BY e.created_at DESC`),
+        query(`SELECT j.*, o.name as org_name, o.logo_url as org_logo FROM jobs j LEFT JOIN organizations o ON j.org_id = o.id WHERE j.status = 'pending_verification' ORDER BY j.created_at DESC`),
+        query(`SELECT s.*, o.name as org_name, o.logo_url as org_logo FROM schemes s LEFT JOIN organizations o ON s.org_id = o.id WHERE s.status = 'pending_verification' ORDER BY s.created_at DESC`),
+      ]);
+      return {
+        events: eventsRes.rows,
+        jobs: jobsRes.rows,
+        schemes: schemesRes.rows,
+        totalPending: eventsRes.rows.length + jobsRes.rows.length + schemesRes.rows.length,
+      };
+    } catch (err: any) {
+      if (config.env === 'development' || !config.isProduction) {
+        const evs = inMemoryEvents.filter((e: any) => e.status === 'pending_verification');
+        const jbs = inMemoryJobs.filter((j: any) => j.status === 'pending_verification');
+        const schs = inMemorySchemes.filter((s: any) => s.status === 'pending_verification');
+        return {
+          events: evs,
+          jobs: jbs,
+          schemes: schs,
+          totalPending: evs.length + jbs.length + schs.length,
+        };
+      }
+      throw err;
+    }
+  }
+
+  static async verifyEvent(eventId: string, adminUserId?: string) {
+    const reviewerId = await resolveReviewerId(adminUserId);
+    try {
+      const res = await query(
+        `UPDATE events 
+         SET status = 'published', is_verified = true, verified_at = NOW(), verified_by = $1, rejection_reason = NULL, updated_at = NOW()
+         WHERE id = $2 RETURNING *`,
+        [reviewerId, eventId]
+      );
+      if (res.rows.length > 0) {
+        const ev = res.rows[0];
+        if (ev.created_by) {
+          await NotificationService.createNotification(
+            ev.created_by,
+            reviewerId,
+            'event_verified',
+            'Event Approved & Published!',
+            `Your event "${ev.title}" has been verified and is now live across KnotNex.`,
+            { eventId: ev.id, status: 'published' }
+          ).catch(() => {});
+        }
+        return ev;
+      }
+    } catch (dbErr: any) {
+      if (config.env === 'development' || !config.isProduction) {
+        const ev = inMemoryEvents.find((e: any) => String(e.id) === String(eventId));
+        if (ev) {
+          ev.status = 'published';
+          ev.is_verified = true;
+          ev.verified_at = new Date().toISOString();
+          return ev;
+        }
+      }
+      throw dbErr;
+    }
+    throw new Error('Event not found');
+  }
+
+  static async rejectEvent(eventId: string, adminUserId?: string, reason?: string) {
+    const reviewerId = await resolveReviewerId(adminUserId);
+    try {
+      const res = await query(
+        `UPDATE events 
+         SET status = 'rejected', is_verified = false, rejection_reason = $1, updated_at = NOW()
+         WHERE id = $2 RETURNING *`,
+        [reason || 'Content does not meet publication standards', eventId]
+      );
+      if (res.rows.length > 0) {
+        const ev = res.rows[0];
+        if (ev.created_by) {
+          await NotificationService.createNotification(
+            ev.created_by,
+            reviewerId,
+            'event_rejected',
+            'Event Review Notice',
+            `Your event "${ev.title}" requires revisions: ${reason || 'Does not meet guidelines'}`,
+            { eventId: ev.id, status: 'rejected', reason }
+          ).catch(() => {});
+        }
+        return ev;
+      }
+    } catch (dbErr: any) {
+      if (config.env === 'development' || !config.isProduction) {
+        const ev = inMemoryEvents.find((e: any) => String(e.id) === String(eventId));
+        if (ev) {
+          ev.status = 'rejected';
+          ev.is_verified = false;
+          ev.rejection_reason = reason;
+          return ev;
+        }
+      }
+      throw dbErr;
+    }
+    throw new Error('Event not found');
+  }
+
+  static async verifyJob(jobId: string, adminUserId?: string) {
+    const reviewerId = await resolveReviewerId(adminUserId);
+    try {
+      const res = await query(
+        `UPDATE jobs 
+         SET status = 'open', is_verified = true, verified_at = NOW(), verified_by = $1, rejection_reason = NULL, updated_at = NOW()
+         WHERE id = $2 RETURNING *`,
+        [reviewerId, jobId]
+      );
+      if (res.rows.length > 0) {
+        const job = res.rows[0];
+        if (job.created_by) {
+          await NotificationService.createNotification(
+            job.created_by,
+            reviewerId,
+            'job_verified',
+            'Job Opportunity Live!',
+            `Your job opening "${job.title}" has been verified and published to applicants.`,
+            { jobId: job.id, status: 'open' }
+          ).catch(() => {});
+        }
+        return job;
+      }
+    } catch (dbErr: any) {
+      if (config.env === 'development' || !config.isProduction) {
+        const job = inMemoryJobs.find((j: any) => String(j.id) === String(jobId));
+        if (job) {
+          job.status = 'open';
+          job.is_verified = true;
+          job.verified_at = new Date().toISOString();
+          return job;
+        }
+      }
+      throw dbErr;
+    }
+    throw new Error('Job not found');
+  }
+
+  static async rejectJob(jobId: string, adminUserId?: string, reason?: string) {
+    const reviewerId = await resolveReviewerId(adminUserId);
+    try {
+      const res = await query(
+        `UPDATE jobs 
+         SET status = 'rejected', is_verified = false, rejection_reason = $1, updated_at = NOW()
+         WHERE id = $2 RETURNING *`,
+        [reason || 'Job requirements require revisions', jobId]
+      );
+      if (res.rows.length > 0) {
+        const job = res.rows[0];
+        if (job.created_by) {
+          await NotificationService.createNotification(
+            job.created_by,
+            reviewerId,
+            'job_rejected',
+            'Job Review Notice',
+            `Your job posting "${job.title}" was not approved: ${reason || 'Requires revisions'}`,
+            { jobId: job.id, status: 'rejected', reason }
+          ).catch(() => {});
+        }
+        return job;
+      }
+    } catch (dbErr: any) {
+      if (config.env === 'development' || !config.isProduction) {
+        const job = inMemoryJobs.find((j: any) => String(j.id) === String(jobId));
+        if (job) {
+          job.status = 'rejected';
+          job.is_verified = false;
+          job.rejection_reason = reason;
+          return job;
+        }
+      }
+      throw dbErr;
+    }
+    throw new Error('Job not found');
+  }
+
+  static async verifyScheme(schemeId: string, adminUserId?: string) {
+    const reviewerId = await resolveReviewerId(adminUserId);
+    try {
+      const res = await query(
+        `UPDATE schemes 
+         SET status = 'active', is_verified = true, verified_at = NOW(), verified_by = $1, rejection_reason = NULL, updated_at = NOW()
+         WHERE id = $2 RETURNING *`,
+        [reviewerId, schemeId]
+      );
+      if (res.rows.length > 0) {
+        const scheme = res.rows[0];
+        if (scheme.created_by) {
+          await NotificationService.createNotification(
+            scheme.created_by,
+            reviewerId,
+            'scheme_verified',
+            'Grant Scheme Live!',
+            `Your welfare scheme "${scheme.title}" has been verified and is active for applications.`,
+            { schemeId: scheme.id, status: 'active' }
+          ).catch(() => {});
+        }
+        return scheme;
+      }
+    } catch (dbErr: any) {
+      if (config.env === 'development' || !config.isProduction) {
+        const s = inMemorySchemes.find((sch: any) => String(sch.id) === String(schemeId));
+        if (s) {
+          s.status = 'active';
+          s.is_verified = true;
+          s.verified_at = new Date().toISOString();
+          return s;
+        }
+      }
+      throw dbErr;
+    }
+    throw new Error('Scheme not found');
+  }
+
+  static async rejectScheme(schemeId: string, adminUserId?: string, reason?: string) {
+    const reviewerId = await resolveReviewerId(adminUserId);
+    try {
+      const res = await query(
+        `UPDATE schemes 
+         SET status = 'rejected', is_verified = false, rejection_reason = $1, updated_at = NOW()
+         WHERE id = $2 RETURNING *`,
+        [reason || 'Welfare criteria require review', schemeId]
+      );
+      if (res.rows.length > 0) {
+        const scheme = res.rows[0];
+        if (scheme.created_by) {
+          await NotificationService.createNotification(
+            scheme.created_by,
+            reviewerId,
+            'scheme_rejected',
+            'Scheme Review Notice',
+            `Your scheme "${scheme.title}" was not approved: ${reason || 'Requires revisions'}`,
+            { schemeId: scheme.id, status: 'rejected', reason }
+          ).catch(() => {});
+        }
+        return scheme;
+      }
+    } catch (dbErr: any) {
+      if (config.env === 'development' || !config.isProduction) {
+        const s = inMemorySchemes.find((sch: any) => String(sch.id) === String(schemeId));
+        if (s) {
+          s.status = 'rejected';
+          s.is_verified = false;
+          s.rejection_reason = reason;
+          return s;
+        }
+      }
+      throw dbErr;
+    }
+    throw new Error('Scheme not found');
   }
 }
 

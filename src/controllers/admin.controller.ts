@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { AdminService } from '../services/admin.service';
 import { UserService } from '../services/user.service';
-import { EventService } from '../services/event.service';
 import { ApiResponse } from '../utils/response.util';
 
 export class AdminController {
@@ -98,24 +97,6 @@ export class AdminController {
     }
   }
 
-  static async approveEvent(req: Request, res: Response) {
-    try {
-      const event = await EventService.updateEvent(req.params.id, { status: 'published' });
-      return ApiResponse.success(res, event, 'Event approved and published');
-    } catch (error: any) {
-      return ApiResponse.error(res, error.message, 400);
-    }
-  }
-
-  static async rejectEvent(req: Request, res: Response) {
-    try {
-      const event = await EventService.updateEvent(req.params.id, { status: 'cancelled' });
-      return ApiResponse.success(res, event, 'Event rejected');
-    } catch (error: any) {
-      return ApiResponse.error(res, error.message, 400);
-    }
-  }
-
   static async getTroubleshootingDeepLink(req: Request, res: Response) {
     return ApiResponse.success(res, {
       status: 'operational',
@@ -128,5 +109,80 @@ export class AdminController {
       ],
       timestamp: new Date(),
     });
+  }
+
+  // ─── Organization Content Verification (Events, Jobs, Schemes) ──────────────────
+
+  static async listPendingContent(req: Request, res: Response) {
+    try {
+      const result = await AdminService.listPendingContent();
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async verifyEvent(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.verifyEvent(req.params.id, adminUserId);
+      return ApiResponse.success(res, result, 'Event verified and published successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async approveEvent(req: Request, res: Response) {
+    return AdminController.verifyEvent(req, res);
+  }
+
+  static async rejectEvent(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.rejectEvent(req.params.id, adminUserId, req.body.reason);
+      return ApiResponse.success(res, result, 'Event rejected');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async verifyJob(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.verifyJob(req.params.id, adminUserId);
+      return ApiResponse.success(res, result, 'Job verified and published successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async rejectJob(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.rejectJob(req.params.id, adminUserId, req.body.reason);
+      return ApiResponse.success(res, result, 'Job rejected');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async verifyScheme(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.verifyScheme(req.params.id, adminUserId);
+      return ApiResponse.success(res, result, 'Scheme verified and published successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async rejectScheme(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.rejectScheme(req.params.id, adminUserId, req.body.reason);
+      return ApiResponse.success(res, result, 'Scheme rejected');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
   }
 }

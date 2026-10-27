@@ -30,14 +30,28 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
 
     const token = authHeader.split('Bearer ')[1].trim();
 
+const resolveUserOrgId = async (userId: string): Promise<string | undefined> => {
+  try {
+    const orgRes = await query(
+      `SELECT id FROM organizations WHERE owner_id = $1 OR id IN (SELECT org_id FROM org_team_members WHERE user_id = $1) LIMIT 1`,
+      [userId]
+    );
+    if (orgRes.rowCount && orgRes.rowCount > 0) {
+      return orgRes.rows[0].id;
+    }
+  } catch (_) {}
+  return undefined;
+};
+
     // ─── Development mock bypass ─────────────────────────────────────────────
-    if (process.env.NODE_ENV === 'development' && token.startsWith('mock_')) {
+    if ((config.env === 'development' || !config.isProduction) && token.startsWith('mock_')) {
       const role = token.replace('mock_', '') as UserRole;
       req.user = {
         id: '00000000-0000-0000-0000-000000000001',
         firebaseUid: 'mock-uid',
         email: `${role || 'user'}@knotnex.test`,
         role: Object.values(UserRole).includes(role) ? role : UserRole.USER,
+        orgId: '00000000-0000-0000-0000-000000000001',
         isVerified: true,
         isBanned: false,
       };
@@ -81,6 +95,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
             firebaseUid: dbUser.firebase_uid,
             email: dbUser.email,
             role: dbUser.role as UserRole,
+            orgId: await resolveUserOrgId(dbUser.id),
             isVerified: dbUser.is_verified,
             isBanned: dbUser.is_banned,
           };
@@ -174,6 +189,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
       firebaseUid: dbUser.firebase_uid,
       email: dbUser.email,
       role: dbUser.role as UserRole,
+      orgId: await resolveUserOrgId(dbUser.id),
       isVerified: dbUser.is_verified,
       isBanned: dbUser.is_banned,
     };

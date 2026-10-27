@@ -5,6 +5,8 @@ import { requireOrgOrAdmin } from '../middleware/role.middleware';
 import { validate } from '../middleware/validator.middleware';
 import { createJobSchema, updateJobSchema } from '../validators/job.validator';
 
+import { ApplicationController } from '../controllers/application.controller';
+
 const router = Router();
 
 router.post('/', authenticate, requireOrgOrAdmin, validate(createJobSchema), JobController.createJob);
@@ -14,5 +16,15 @@ router.patch('/:id', authenticate, requireOrgOrAdmin, validate(updateJobSchema),
 router.delete('/:id', authenticate, requireOrgOrAdmin, JobController.deleteJob);
 router.post('/:id/save', authenticate, JobController.saveJob);
 router.get('/:id/similar', optionalAuthenticate, JobController.getSimilarJobs);
+
+// Applications under job
+router.get('/:id/applications', authenticate, requireOrgOrAdmin, (req, res) => {
+  req.params.jobId = req.params.id;
+  return ApplicationController.listByJob(req, res);
+});
+router.patch('/:id/applications/:appId/stage', authenticate, requireOrgOrAdmin, (req, res) => {
+  req.params.id = req.params.appId;
+  return ApplicationController.updateStage(req, res);
+});
 
 export default router;

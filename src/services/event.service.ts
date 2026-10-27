@@ -5,6 +5,8 @@ import { generateSlug } from '../utils/slug.util';
 import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
 import { EventStatus } from '../types/enums';
 
+export const inMemoryEvents: any[] = [];
+
 const DEV_EVENTS_FILE = path.resolve(process.cwd(), 'src/db/dev_events_store.json');
 
 let isDbOnline = true;
@@ -197,7 +199,6 @@ export class EventService {
     category?: string;
     type?: string;
     status?: string;
-    wheelchairOnly?: boolean;
     search?: string;
   }) {
     const { page, limit, offset } = getPagination(params);
@@ -207,7 +208,7 @@ export class EventService {
     let idx = 1;
 
     if (params.category) {
-      conditions.push(`e.category = $${idx++}`);
+      conditions.push(`e.category ILIKE $${idx++}`);
       values.push(params.category);
     }
     if (params.type) {
@@ -217,9 +218,6 @@ export class EventService {
     if (params.status) {
       conditions.push(`e.status = $${idx++}`);
       values.push(params.status);
-    }
-    if (params.wheelchairOnly) {
-      conditions.push(`e.wheelchair_accessible = true`);
     }
     if (params.search) {
       conditions.push(`(e.title ILIKE $${idx} OR e.short_description ILIKE $${idx} OR e.venue_name ILIKE $${idx})`);
@@ -306,31 +304,27 @@ export class EventService {
   }
 
   static async updateEvent(id: string, data: any) {
-    if (data.name && !data.title) data.title = data.name;
-    if (data.poster && !data.coverUrl) data.coverUrl = data.poster;
-    if (data.date && !data.eventDate) data.eventDate = data.date;
-    if (data.location && !data.venueName) data.venueName = data.location;
-    if (data.description && !data.detailedDescription) data.detailedDescription = data.description;
-    if (data.ticketPrice !== undefined && typeof data.ticketPrice === 'string') {
-      data.ticketPrice = parseFloat(data.ticketPrice.replace(/[^0-9.]/g, '')) || 0;
-    }
-
-    const allowed = [
-      'title', 'category', 'type', 'cover_url', 'short_description', 'detailed_description',
-      'language', 'event_date', 'start_time', 'end_time', 'timezone', 'venue_name', 'address',
-      'district', 'state', 'wheelchair_accessible', 'sign_language', 'braille_material',
-      'capacity', 'is_free', 'ticket_price', 'status'
-    ];
-
     const fields: string[] = [];
     const values: any[] = [id];
     let idx = 2;
+
+    const allowed = [
+      'title', 'category', 'type', 'cover_url', 'short_description', 'detailed_description',
+      'language', 'event_date', 'start_time', 'end_time', 'timezone', 'registration_opens',
+      'registration_deadline', 'venue_name', 'address', 'district', 'state', 'google_maps_link',
+      'meeting_platform', 'meeting_link', 'wheelchair_accessible', 'sign_language',
+      'braille_material', 'capacity', 'is_free', 'ticket_price', 'status', 'eligibility',
+      'sponsors', 'gallery', 'contact_email'
+    ];
 
     for (const key of allowed) {
       const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
       if (data[camel] !== undefined) {
         fields.push(`${key} = $${idx++}`);
         values.push(data[camel]);
+      } else if (data[key] !== undefined) {
+        fields.push(`${key} = $${idx++}`);
+        values.push(data[key]);
       }
     }
 
@@ -422,4 +416,3 @@ export class EventService {
     return devList.filter(e => String(e.id) !== String(eventId) && (e.category === currentEvent.category || e.type === currentEvent.type)).slice(0, 4);
   }
 }
-

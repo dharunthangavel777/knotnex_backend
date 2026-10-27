@@ -8,6 +8,7 @@ import { registerEventSchema, updateRegistrationStatusSchema } from '../validato
 const router = Router();
 
 router.post('/', authenticate, validate(registerEventSchema), RegistrationController.register);
+router.get('/', authenticate, RegistrationController.listAll);
 router.get('/my-registrations', authenticate, RegistrationController.listByUser);
 router.get('/event/:eventId', authenticate, requireOrgOrAdmin, RegistrationController.listByEvent);
 router.get('/user/:userId', authenticate, RegistrationController.listByUser);

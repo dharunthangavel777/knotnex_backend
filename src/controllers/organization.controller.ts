@@ -126,4 +126,77 @@ export class OrganizationController {
       return ApiResponse.error(res, error.message, 500);
     }
   }
+
+  static async getOrgCampaigns(req: Request, res: Response) {
+    try {
+      const campaigns = await OrganizationService.getOrgCampaigns(req.params.id);
+      return ApiResponse.success(res, campaigns);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async createOrgCampaign(req: Request, res: Response) {
+    try {
+      const campaign = await OrganizationService.createOrgCampaign(req.params.id, req.body);
+      return ApiResponse.created(res, campaign, 'Campaign created');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async deleteOrgCampaign(req: Request, res: Response) {
+    try {
+      const result = await OrganizationService.deleteOrgCampaign(req.params.id, req.params.campaignId);
+      return ApiResponse.success(res, result, 'Campaign deleted');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async getOrgAchievements(req: Request, res: Response) {
+    try {
+      const achievements = await OrganizationService.getOrgAchievements(req.params.id);
+      return ApiResponse.success(res, achievements);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async createOrgAchievement(req: Request, res: Response) {
+    try {
+      const achievement = await OrganizationService.createOrgAchievement(req.params.id, req.body);
+      return ApiResponse.created(res, achievement, 'Achievement recorded');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async deleteOrgAchievement(req: Request, res: Response) {
+    try {
+      const result = await OrganizationService.deleteOrgAchievement(req.params.id, req.params.achId);
+      return ApiResponse.success(res, result, 'Achievement deleted');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async getOrgJobApplications(req: Request, res: Response) {
+    try {
+      const result = await OrganizationService.getOrgJobApplications(req.params.id, req.query);
+      return ApiResponse.paginated(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async getOrgSchemeApplications(req: Request, res: Response) {
+    try {
+      const result = await OrganizationService.getOrgSchemeApplications(req.params.id, req.query);
+      return ApiResponse.paginated(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
 }
+

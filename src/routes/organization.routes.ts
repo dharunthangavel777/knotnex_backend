@@ -20,5 +20,13 @@ router.get('/:id/events', optionalAuthenticate, OrganizationController.getOrgEve
 router.get('/:id/jobs', optionalAuthenticate, OrganizationController.getOrgJobs);
 router.get('/:id/schemes', optionalAuthenticate, OrganizationController.getOrgSchemes);
 router.get('/:id/registrations', authenticate, OrganizationController.getOrgRegistrations);
+router.get('/:id/job-applications', authenticate, requireOrgOrAdmin, OrganizationController.getOrgJobApplications);
+router.get('/:id/scheme-applications', authenticate, requireOrgOrAdmin, OrganizationController.getOrgSchemeApplications);
+router.get('/:id/campaigns', optionalAuthenticate, OrganizationController.getOrgCampaigns);
+router.post('/:id/campaigns', authenticate, requireOrgOrAdmin, OrganizationController.createOrgCampaign);
+router.delete('/:id/campaigns/:campaignId', authenticate, requireOrgOrAdmin, OrganizationController.deleteOrgCampaign);
+router.get('/:id/achievements', optionalAuthenticate, OrganizationController.getOrgAchievements);
+router.post('/:id/achievements', authenticate, requireOrgOrAdmin, OrganizationController.createOrgAchievement);
+router.delete('/:id/achievements/:achId', authenticate, requireOrgOrAdmin, OrganizationController.deleteOrgAchievement);
 
 export default router;

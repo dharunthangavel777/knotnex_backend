@@ -27,6 +27,8 @@ export enum EventStatus {
   ONGOING = 'ongoing',
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
+  PENDING_VERIFICATION = 'pending_verification',
+  REJECTED = 'rejected',
 }
 
 export enum RegistrationStatus {
@@ -54,6 +56,8 @@ export enum JobStatus {
   DRAFT = 'draft',
   OPEN = 'open',
   CLOSED = 'closed',
+  PENDING_VERIFICATION = 'pending_verification',
+  REJECTED = 'rejected',
 }
 
 export enum JobApplicationStage {
@@ -75,6 +79,8 @@ export enum SchemeStatus {
   ACTIVE = 'active',
   EXPIRED = 'expired',
   UPCOMING = 'upcoming',
+  PENDING_VERIFICATION = 'pending_verification',
+  REJECTED = 'rejected',
 }
 
 export enum SchemeApplicationStatus {
