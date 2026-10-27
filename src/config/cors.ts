@@ -10,14 +10,7 @@ export const corsOptions: cors.CorsOptions = {
       config.corsOrigins.includes('*') ||
       config.corsOrigins.includes(origin) ||
       origin.endsWith('.knotnex.com') ||
-      origin.includes('run.app')
-    ) {
-      return callback(null, true);
-    }
-
-    // In development or test allow localhost / local IP origins freely
-    if (
-      (config.env === 'development' || config.env === 'test') &&
+      origin.includes('run.app') ||
       /^http:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2|\d+\.\d+\.\d+\.\d+):\d+$/.test(origin)
     ) {
       return callback(null, true);
