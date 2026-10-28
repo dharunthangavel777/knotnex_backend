@@ -111,7 +111,7 @@ export class AdminController {
     });
   }
 
-  // ─── Organization Content Verification ──────────────────────────────────────────
+  // ─── Organization Content Verification (Events, Jobs, Schemes) ──────────────────
 
   static async listPendingContent(req: Request, res: Response) {
     try {
@@ -130,6 +130,10 @@ export class AdminController {
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);
     }
+  }
+
+  static async approveEvent(req: Request, res: Response) {
+    return AdminController.verifyEvent(req, res);
   }
 
   static async rejectEvent(req: Request, res: Response) {
