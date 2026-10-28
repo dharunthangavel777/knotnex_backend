@@ -8,19 +8,77 @@ import { logger } from '../config/logger';
 export const inMemorySchemes: any[] = [];
 export const inMemorySchemeApps: any[] = [];
 
+export function formatSchemeResponse(row: any) {
+  if (!row) return null;
+  const parseJson = (val: any, fallback: any = null) => {
+    if (!val) return fallback;
+    if (typeof val === 'object') return val;
+    try {
+      return JSON.parse(val);
+    } catch {
+      return fallback;
+    }
+  };
+
+  const processSteps = parseJson(row.process_steps, []);
+  const faqs = parseJson(row.faqs, []);
+  const metadata = parseJson(row.metadata, {});
+
+  const eligList = Array.isArray(row.eligibility_criteria) ? row.eligibility_criteria : [];
+  const bnfList = Array.isArray(row.benefits) ? row.benefits : [];
+  const docList = Array.isArray(row.documents_required) ? row.documents_required : [];
+
+  const grantAmount = row.grant_amount || (row.funding_amount ? `₹${Number(row.funding_amount).toLocaleString('en-IN')}` : null);
+  const benefitDisplay = grantAmount || (bnfList.length > 0 ? bnfList[0] : 'Direct Benefit');
+
+  return {
+    ...row,
+    process_steps: processSteps,
+    faqs,
+    metadata,
+
+    // Flutter SchemeModel & Admin SchemeModel Direct Parity Fields
+    coverUrl: row.cover_url || '',
+    bannerUrl: row.cover_url || '',
+    providerName: row.provider_name || row.org_name || 'Govt. of India',
+    organization: row.provider_name || row.org_name || 'Govt. of India',
+    ministry: row.provider_name || row.org_name || 'Govt. of India',
+    organizationAvatar: row.org_logo || '',
+    location: row.region || 'Pan India',
+    grantAmount: grantAmount || '',
+    benefit: benefitDisplay,
+    eligibilityCriteria: eligList,
+    eligibility: eligList,
+    documentsRequired: docList,
+    requirements: docList,
+    howToApply: processSteps,
+    steps: processSteps,
+    applicationSteps: processSteps,
+    officialPortalUrl: row.official_portal_url || '',
+    applyUrl: row.official_portal_url || '',
+    organizationWebsite: row.official_portal_url || '',
+    supportEmail: row.support_email || 'support@schemes.gov.in',
+    supportPhone: row.support_phone || '1800-111-555',
+    isVerified: Boolean(row.is_verified),
+    badge: (row.status || 'ACTIVE').toUpperCase(),
+  };
+}
+
 export class SchemeService {
   static async createScheme(orgId: string | null, userId: string, data: any) {
     const title = data.title || data.name || 'Untitled Scheme';
-    const providerName = data.providerName || data.provider || data.department || 'KnotNex Foundation';
+    const providerName = data.providerName || data.provider || data.orgName || data.department || 'KnotNex Foundation';
     const type = data.type || 'NGO';
     const category = data.category || 'Welfare';
-    const description = data.description || 'Scheme details and welfare benefits for community members.';
-    const grantAmount = data.grantAmount || (data.fundingAmount ? `₹${data.fundingAmount}` : null);
+    const description = data.description || data.desc || 'Scheme details and welfare benefits for community members.';
+    const grantAmount = data.grantAmount || data.value || (data.fundingAmount ? `₹${data.fundingAmount}` : null);
     const fundingAmount = data.fundingAmount ? Number(data.fundingAmount) : null;
-    const processSteps = JSON.stringify(data.processSteps || []);
+    const processSteps = JSON.stringify(data.processSteps || data.applicationSteps || data.howToApply || []);
     const faqs = JSON.stringify(data.faqs || []);
-    const supportEmail = data.supportEmail || null;
-    const supportPhone = data.supportPhone || null;
+    const supportEmail = data.supportEmail || data.emailSupport || null;
+    const supportPhone = data.supportPhone || data.helpline || null;
+    const coverUrl = data.coverUrl || data.bannerUrl || null;
+    const region = data.region || 'Pan India';
     const metadata = JSON.stringify(data.metadata || {});
     const initialStatus = data.status || SchemeStatus.PENDING_VERIFICATION;
 
@@ -30,9 +88,12 @@ export class SchemeService {
           org_id, created_by, title, provider_name, type, category,
           description, eligibility_criteria, benefits, documents_required,
           application_deadline, official_portal_url, status,
-          grant_amount, funding_amount, process_steps, faqs, support_email, support_phone, metadata, is_verified
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-        RETURNING *`,
+          grant_amount, funding_amount, process_steps, faqs, support_email, support_phone,
+          cover_url, region, metadata, is_verified
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+          $20, $21, $22, $23
+        ) RETURNING *`,
         [
           orgId || null,
           userId,
@@ -43,7 +104,7 @@ export class SchemeService {
           description,
           data.eligibilityCriteria || (data.eligibility ? [data.eligibility] : []),
           data.benefits || [],
-          data.documentsRequired || data.documents || [],
+          data.documentsRequired || data.requirements || data.documents || [],
           data.applicationDeadline || data.deadline || null,
           data.officialPortalUrl || data.portalUrl || null,
           initialStatus,
@@ -53,6 +114,8 @@ export class SchemeService {
           faqs,
           supportEmail,
           supportPhone,
+          coverUrl,
+          region,
           metadata,
           initialStatus === SchemeStatus.ACTIVE,
         ]
@@ -60,7 +123,7 @@ export class SchemeService {
 
       const created = res.rows[0];
       inMemorySchemes.unshift(created);
-      return created;
+      return formatSchemeResponse(created);
     } catch (dbErr: any) {
       if (config.env === 'development' || !config.isProduction) {
         logger.warn('[SchemeService] DB query failed, storing scheme in-memory', dbErr.message);
@@ -75,11 +138,18 @@ export class SchemeService {
           description,
           eligibility_criteria: data.eligibilityCriteria || (data.eligibility ? [data.eligibility] : []),
           benefits: data.benefits || [],
-          documents_required: data.documentsRequired || data.documents || [],
+          documents_required: data.documentsRequired || data.requirements || data.documents || [],
           application_deadline: data.applicationDeadline || data.deadline || null,
           official_portal_url: data.officialPortalUrl || data.portalUrl || null,
           grant_amount: grantAmount,
           funding_amount: fundingAmount,
+          process_steps: data.processSteps || data.applicationSteps || [],
+          faqs: data.faqs || [],
+          support_email: supportEmail,
+          support_phone: supportPhone,
+          cover_url: coverUrl,
+          region,
+          metadata: data.metadata || {},
           status: initialStatus,
           is_verified: initialStatus === SchemeStatus.ACTIVE,
           applications_count: 0,
@@ -87,7 +157,7 @@ export class SchemeService {
           updated_at: new Date().toISOString(),
         };
         inMemorySchemes.unshift(newScheme);
-        return newScheme;
+        return formatSchemeResponse(newScheme);
       }
       throw dbErr;
     }
@@ -141,16 +211,18 @@ export class SchemeService {
       const total = parseInt(countRes.rows[0].count, 10);
 
       const schemesRes = await query(
-        `SELECT s.*,
+        `SELECT s.*, o.name as org_name, o.logo_url as org_logo,
                 COALESCE((SELECT COUNT(*) FROM scheme_applications sa WHERE sa.scheme_id = s.id), 0) AS applications_count
          FROM schemes s
+         LEFT JOIN organizations o ON s.org_id = o.id
          ${whereClause}
          ORDER BY s.created_at DESC
          LIMIT $${idx++} OFFSET $${idx++}`,
         [...values, limit, offset]
       );
 
-      return buildPaginatedResult(schemesRes.rows, total, page, limit);
+      const formatted = schemesRes.rows.map(r => formatSchemeResponse(r));
+      return buildPaginatedResult(formatted, total, page, limit);
     } catch (dbErr: any) {
       if (config.env === 'development' || !config.isProduction) {
         logger.warn('[SchemeService] DB unreachable, returning in-memory schemes');
@@ -161,7 +233,8 @@ export class SchemeService {
         } else if (!targetOrgId) {
           filtered = filtered.filter(s => s.status === 'active');
         }
-        return buildPaginatedResult(filtered, filtered.length, page, limit);
+        const formatted = filtered.map(s => formatSchemeResponse(s));
+        return buildPaginatedResult(formatted, filtered.length, page, limit);
       }
       throw dbErr;
     }
@@ -170,17 +243,18 @@ export class SchemeService {
   static async getSchemeById(id: string) {
     try {
       const res = await query(
-        `SELECT s.*,
+        `SELECT s.*, o.name as org_name, o.logo_url as org_logo,
                 COALESCE((SELECT COUNT(*) FROM scheme_applications sa WHERE sa.scheme_id = s.id), 0) AS applications_count
          FROM schemes s
+         LEFT JOIN organizations o ON s.org_id = o.id
          WHERE s.id = $1`,
         [id]
       );
-      return res.rows[0] || null;
+      return res.rows[0] ? formatSchemeResponse(res.rows[0]) : null;
     } catch (dbErr: any) {
       if (config.env === 'development' || !config.isProduction) {
         const found = inMemorySchemes.find(s => s.id === id);
-        return found || null;
+        return found ? formatSchemeResponse(found) : null;
       }
       throw dbErr;
     }
@@ -191,8 +265,11 @@ export class SchemeService {
       'title', 'provider_name', 'type', 'category', 'description',
       'eligibility_criteria', 'benefits', 'documents_required',
       'application_deadline', 'official_portal_url', 'status',
-      'grant_amount', 'funding_amount', 'support_email', 'support_phone'
+      'grant_amount', 'funding_amount', 'support_email', 'support_phone',
+      'cover_url', 'region', 'is_verified', 'process_steps', 'faqs'
     ];
+
+    const jsonbFields = ['process_steps', 'faqs', 'metadata'];
 
     const fields: string[] = [];
     const values: any[] = [id];
@@ -200,12 +277,14 @@ export class SchemeService {
 
     for (const key of allowed) {
       const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
-      if (data[camel] !== undefined) {
+      const val = data[camel] !== undefined ? data[camel] : data[key];
+      if (val !== undefined) {
         fields.push(`${key} = $${idx++}`);
-        values.push(data[camel]);
-      } else if (data[key] !== undefined) {
-        fields.push(`${key} = $${idx++}`);
-        values.push(data[key]);
+        if (jsonbFields.includes(key)) {
+          values.push(typeof val === 'string' ? val : JSON.stringify(val));
+        } else {
+          values.push(val);
+        }
       }
     }
 
@@ -218,13 +297,13 @@ export class SchemeService {
         `UPDATE schemes SET ${fields.join(', ')} WHERE id = $1 RETURNING *`,
         values
       );
-      return res.rows[0];
+      return formatSchemeResponse(res.rows[0]);
     } catch (dbErr: any) {
       if (config.env === 'development' || !config.isProduction) {
-        const idx = inMemorySchemes.findIndex(s => s.id === id);
-        if (idx !== -1) {
-          inMemorySchemes[idx] = { ...inMemorySchemes[idx], ...data, updated_at: new Date().toISOString() };
-          return inMemorySchemes[idx];
+        const sIdx = inMemorySchemes.findIndex(s => s.id === id);
+        if (sIdx !== -1) {
+          inMemorySchemes[sIdx] = { ...inMemorySchemes[sIdx], ...data, updated_at: new Date().toISOString() };
+          return formatSchemeResponse(inMemorySchemes[sIdx]);
         }
       }
       throw dbErr;
@@ -245,47 +324,40 @@ export class SchemeService {
     }
   }
 
-  static async applyForScheme(schemeId: string, userId: string, data: any) {
-    const requestedAmount = data.requestedAmount || data.funding || '₹10,00,000';
+  static async applyScheme(schemeId: string, applicantId: string, data: any) {
+    const documentUrls = data.documentUrls || (data.documentUrl ? [data.documentUrl] : []);
+    const notes = data.applicantNotes || data.notes || '';
+    const requestedAmount = data.requestedAmount || null;
     const contactPerson = data.contactPerson || null;
-    const orgType = data.orgType || 'NGO';
-    const stage = data.stage || 'Under Review';
-    const status = data.status || 'submitted';
+    const orgType = data.orgType || null;
+    const metadata = JSON.stringify(data.metadata || {});
 
     try {
       const res = await query(
         `INSERT INTO scheme_applications (
           scheme_id, applicant_id, document_urls, applicant_notes,
-          status, stage, requested_amount, contact_person, org_type
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          stage, status, requested_amount, contact_person, org_type, metadata
+        ) VALUES ($1, $2, $3, $4, 'Under Review', 'under_review', $5, $6, $7, $8)
+        ON CONFLICT (scheme_id, applicant_id) DO UPDATE SET
+          document_urls = EXCLUDED.document_urls,
+          applicant_notes = EXCLUDED.applicant_notes,
+          updated_at = NOW()
         RETURNING *`,
-        [
-          schemeId,
-          userId,
-          data.documentUrls || [],
-          data.applicantNotes || null,
-          status,
-          stage,
-          requestedAmount,
-          contactPerson,
-          orgType
-        ]
+        [schemeId, applicantId, documentUrls, notes, requestedAmount, contactPerson, orgType, metadata]
       );
       return res.rows[0];
     } catch (dbErr: any) {
-      if (config.env === 'development') {
+      if (config.env === 'development' || !config.isProduction) {
         const app = {
           id: `sapp-${Date.now()}`,
           scheme_id: schemeId,
-          applicant_id: userId,
-          document_urls: data.documentUrls || [],
-          applicant_notes: data.applicantNotes || '',
-          status,
-          stage,
-          requested_amount: requestedAmount,
-          contact_person: contactPerson,
-          org_type: orgType,
+          applicant_id: applicantId,
+          document_urls: documentUrls,
+          applicant_notes: notes,
+          stage: 'Under Review',
+          status: 'under_review',
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         };
         inMemorySchemeApps.unshift(app);
         return app;
@@ -294,79 +366,46 @@ export class SchemeService {
     }
   }
 
-  static async listApplications(schemeId: string) {
+  static async listApplicationsForScheme(schemeId: string) {
     try {
       const res = await query(
-        `SELECT a.*,
-                u.full_name AS applicant,
-                u.full_name,
-                u.email,
-                u.phone,
-                u.avatar_url,
-                s.title AS scheme_title
-         FROM scheme_applications a
-         JOIN users u ON a.applicant_id = u.id
-         JOIN schemes s ON a.scheme_id = s.id
-         WHERE a.scheme_id = $1
-         ORDER BY a.created_at DESC`,
+        `SELECT sa.*, u.full_name as applicant_name, u.email as applicant_email, u.avatar_url as applicant_avatar
+         FROM scheme_applications sa
+         JOIN users u ON sa.applicant_id = u.id
+         WHERE sa.scheme_id = $1
+         ORDER BY sa.created_at DESC`,
         [schemeId]
       );
       return res.rows;
     } catch (dbErr: any) {
-      if (config.env === 'development') {
+      if (config.env === 'development' || !config.isProduction) {
         return inMemorySchemeApps.filter(a => a.scheme_id === schemeId);
       }
       throw dbErr;
     }
   }
 
-  static async getApplicationById(applicationId: string) {
+  static async applyForScheme(schemeId: string, applicantId: string, data: any) {
+    return this.applyScheme(schemeId, applicantId, data);
+  }
+
+  static async listApplications(schemeId: string) {
+    return this.listApplicationsForScheme(schemeId);
+  }
+
+  static async getApplicationById(appId: string) {
     try {
       const res = await query(
-        `SELECT a.*,
-                u.full_name AS applicant,
-                u.full_name,
-                u.email,
-                u.phone,
-                u.avatar_url,
-                s.title AS scheme_title,
-                s.provider_name
-         FROM scheme_applications a
-         JOIN users u ON a.applicant_id = u.id
-         JOIN schemes s ON a.scheme_id = s.id
-         WHERE a.id = $1`,
-        [applicationId]
+        `SELECT sa.*, u.full_name as applicant_name, u.email as applicant_email, u.avatar_url as applicant_avatar
+         FROM scheme_applications sa
+         JOIN users u ON sa.applicant_id = u.id
+         WHERE sa.id = $1`,
+        [appId]
       );
       return res.rows[0] || null;
     } catch (dbErr: any) {
-      if (config.env === 'development') {
-        return inMemorySchemeApps.find(a => a.id === applicationId) || null;
-      }
-      throw dbErr;
-    }
-  }
-
-  static async updateApplicationStatus(applicationId: string, status: string, stage?: string, reviewerNotes?: string) {
-    const updatedStage = stage || (status.toLowerCase() === 'approved' ? 'Approved & Disbursed' : 'Under Review');
-
-    try {
-      const res = await query(
-        `UPDATE scheme_applications
-         SET status = $1, stage = $2, reviewer_notes = COALESCE($3, reviewer_notes), updated_at = NOW()
-         WHERE id = $4
-         RETURNING *`,
-        [status.toLowerCase(), updatedStage, reviewerNotes || null, applicationId]
-      );
-      return res.rows[0];
-    } catch (dbErr: any) {
-      if (config.env === 'development') {
-        const found = inMemorySchemeApps.find(a => a.id === applicationId);
-        if (found) {
-          found.status = status.toLowerCase();
-          found.stage = updatedStage;
-          if (reviewerNotes) found.reviewer_notes = reviewerNotes;
-          return found;
-        }
+      if (config.env === 'development' || !config.isProduction) {
+        return inMemorySchemeApps.find(a => a.id === appId) || null;
       }
       throw dbErr;
     }
@@ -375,25 +414,71 @@ export class SchemeService {
   static async getOrgSchemeApplications(orgId: string) {
     try {
       const res = await query(
-        `SELECT a.*,
-                u.full_name AS applicant,
-                u.full_name,
-                u.email,
-                u.phone,
-                u.avatar_url,
-                s.title AS scheme_title,
-                s.category AS scheme_category
-         FROM scheme_applications a
-         JOIN schemes s ON a.scheme_id = s.id
-         JOIN users u ON a.applicant_id = u.id
+        `SELECT sa.*, s.title as scheme_title, u.full_name as applicant_name, u.email as applicant_email
+         FROM scheme_applications sa
+         JOIN schemes s ON sa.scheme_id = s.id
+         JOIN users u ON sa.applicant_id = u.id
          WHERE s.org_id = $1
-         ORDER BY a.created_at DESC`,
+         ORDER BY sa.created_at DESC`,
         [orgId]
       );
       return res.rows;
     } catch (dbErr: any) {
-      if (config.env === 'development') {
+      if (config.env === 'development' || !config.isProduction) {
         return inMemorySchemeApps;
+      }
+      throw dbErr;
+    }
+  }
+
+  static async updateApplicationStatus(arg1: string, arg2: string, arg3?: string, arg4?: string, arg5?: string) {
+    let appId: string;
+    let status: string;
+    let stage: string | undefined;
+    let reviewerNotes: string | undefined;
+
+    if (arg5 !== undefined) {
+      // (schemeId, appId, status, stage, reviewerNotes)
+      appId = arg2;
+      status = arg3!;
+      stage = arg4;
+      reviewerNotes = arg5;
+    } else {
+      // (appId, status, stage, reviewerNotes)
+      appId = arg1;
+      status = arg2;
+      stage = arg3;
+      reviewerNotes = arg4;
+    }
+
+    const fields = ['status = $1', 'updated_at = NOW()'];
+    const values: any[] = [status, appId];
+    let idx = 3;
+
+    if (stage) {
+      fields.push(`stage = $${idx++}`);
+      values.push(stage);
+    }
+    if (reviewerNotes) {
+      fields.push(`reviewer_notes = $${idx++}`);
+      values.push(reviewerNotes);
+    }
+
+    try {
+      const res = await query(
+        `UPDATE scheme_applications SET ${fields.join(', ')} WHERE id = $2 RETURNING *`,
+        values
+      );
+      return res.rows[0];
+    } catch (dbErr: any) {
+      if (config.env === 'development' || !config.isProduction) {
+        const app = inMemorySchemeApps.find(a => a.id === appId);
+        if (app) {
+          app.status = status;
+          if (stage) app.stage = stage;
+          if (reviewerNotes) app.reviewer_notes = reviewerNotes;
+          return app;
+        }
       }
       throw dbErr;
     }

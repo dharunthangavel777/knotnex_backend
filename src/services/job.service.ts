@@ -5,6 +5,77 @@ import { JobStatus } from '../types/enums';
 
 export const inMemoryJobs: any[] = [];
 
+export function formatJobResponse(row: any) {
+  if (!row) return null;
+  const parseJson = (val: any, fallback: any = null) => {
+    if (!val) return fallback;
+    if (typeof val === 'object') return val;
+    try {
+      return JSON.parse(val);
+    } catch {
+      return fallback;
+    }
+  };
+
+  const recruiterInfo = parseJson(row.recruiter_info, {});
+  const appFormConfig = parseJson(row.application_form_config, {});
+  const faqs = parseJson(row.faqs, []);
+
+  const minSal = row.min_salary != null ? Number(row.min_salary) : null;
+  const maxSal = row.max_salary != null ? Number(row.max_salary) : null;
+  let salaryRange = 'Competitive';
+  if (minSal != null && maxSal != null) {
+    salaryRange = `₹${minSal.toLocaleString('en-IN')} - ₹${maxSal.toLocaleString('en-IN')} / mo`;
+  } else if (minSal != null) {
+    salaryRange = `₹${minSal.toLocaleString('en-IN')}+ / mo`;
+  }
+
+  const locType = (row.location_type || 'on-site').toLowerCase();
+  let workMode = 'Onsite';
+  if (locType === 'remote') {
+    workMode = 'Remote';
+  } else if (locType === 'hybrid') {
+    workMode = 'Hybrid';
+  }
+
+  const requirements = Array.isArray(row.requirements) ? row.requirements : [];
+  const responsibilities = Array.isArray(row.responsibilities) ? row.responsibilities : [];
+  const benefits = Array.isArray(row.benefits) && row.benefits.length > 0
+    ? row.benefits
+    : ['Health insurance', 'Flexible hours', 'Accessible workplace'];
+  const accommodations = Array.isArray(row.disability_accommodations) ? row.disability_accommodations : [];
+
+  return {
+    ...row,
+    benefits,
+    recruiter_info: recruiterInfo,
+    application_form_config: appFormConfig,
+    faqs,
+
+    // Flutter JobModel & Admin JobModel Direct Parity Fields
+    companyName: row.org_name || 'KnotNex Partner',
+    companyLogoUrl: row.org_logo || '',
+    isVerified: Boolean(row.is_verified),
+    jobType: row.type || 'Full-time',
+    salaryRange,
+    experienceRequired: row.experience_level || '1-3 years',
+    skillsRequired: requirements,
+    skills: requirements,
+    responsibilities,
+    accessibilitySupport: accommodations,
+    accommodations,
+    workMode,
+    companyProfile: row.org_about || row.description || '',
+    recruiter: {
+      name: recruiterInfo.name || row.recruiter_name || 'Hiring Team',
+      title: recruiterInfo.title || row.recruiter_title || 'Recruiter',
+      avatar: recruiterInfo.avatar || row.recruiter_avatar || '',
+    },
+    recruiterName: recruiterInfo.name || row.recruiter_name || 'Hiring Team',
+    recruiterRole: recruiterInfo.title || row.recruiter_title || 'Recruiter',
+  };
+}
+
 export class JobService {
   static async createJob(orgId: string, userId: string, data: any) {
     const title = data.title || data.role || 'Untitled Opportunity';
@@ -16,6 +87,10 @@ export class JobService {
     const requirements = Array.isArray(data.requirements) ? data.requirements : (Array.isArray(data.skills) ? data.skills : []);
     const responsibilities = Array.isArray(data.responsibilities) ? data.responsibilities : [];
     const accommodations = Array.isArray(data.disabilityAccommodations) ? data.disabilityAccommodations : (Array.isArray(data.accommodations) ? data.accommodations : []);
+    const benefits = Array.isArray(data.benefits) ? data.benefits : (Array.isArray(data.perks) ? data.perks : []);
+    const recruiterInfo = JSON.stringify(data.recruiterInfo || data.recruiter || {});
+    const formConfig = JSON.stringify(data.applicationFormConfig || data.formConfig || {});
+    const faqs = JSON.stringify(data.faqs || []);
     const initialStatus = data.status || JobStatus.PENDING_VERIFICATION;
 
     try {
@@ -24,9 +99,11 @@ export class JobService {
           org_id, created_by, title, department, type, location_type, location,
           description, requirements, responsibilities, disability_accommodations,
           min_salary, max_salary, currency, experience_level, education_level,
-          deadline, status, is_verified
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-        RETURNING *`,
+          deadline, status, is_verified, benefits, recruiter_info, application_form_config, faqs
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+          $17, $18, $19, $20, $21, $22, $23
+        ) RETURNING *`,
         [
           orgId,
           userId,
@@ -47,12 +124,16 @@ export class JobService {
           data.deadline || null,
           initialStatus,
           initialStatus === JobStatus.OPEN,
+          benefits,
+          recruiterInfo,
+          formConfig,
+          faqs,
         ]
       );
 
       const created = res.rows[0];
       inMemoryJobs.unshift(created);
-      return created;
+      return formatJobResponse(created);
     } catch (err: any) {
       if (config.env === 'development' || !config.isProduction) {
         const devJob = {
@@ -73,12 +154,16 @@ export class JobService {
           currency: data.currency || 'INR',
           status: initialStatus,
           is_verified: initialStatus === JobStatus.OPEN,
+          benefits,
+          recruiter_info: data.recruiterInfo || data.recruiter || {},
+          application_form_config: data.applicationFormConfig || {},
+          faqs: data.faqs || [],
           applicants_count: 0,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
         inMemoryJobs.unshift(devJob);
-        return devJob;
+        return formatJobResponse(devJob);
       }
       throw err;
     }
@@ -130,7 +215,7 @@ export class JobService {
       const total = parseInt(countRes.rows[0].count, 10);
 
       const jobsRes = await query(
-        `SELECT j.*, o.name as org_name, o.logo_url as org_logo
+        `SELECT j.*, o.name as org_name, o.logo_url as org_logo, o.website as org_website
          FROM jobs j
          JOIN organizations o ON j.org_id = o.id
          ${whereClause}
@@ -139,7 +224,8 @@ export class JobService {
         [...values, limit, offset]
       );
 
-      return buildPaginatedResult(jobsRes.rows, total, page, limit);
+      const formatted = jobsRes.rows.map(r => formatJobResponse(r));
+      return buildPaginatedResult(formatted, total, page, limit);
     } catch (err: any) {
       if (config.env === 'development' || !config.isProduction) {
         let filtered = [...inMemoryJobs];
@@ -151,7 +237,8 @@ export class JobService {
         } else if (!params.orgId) {
           filtered = filtered.filter(j => j.status === 'open');
         }
-        return buildPaginatedResult(filtered, filtered.length, page, limit);
+        const formatted = filtered.map(j => formatJobResponse(j));
+        return buildPaginatedResult(formatted, formatted.length, page, limit);
       }
       throw err;
     }
@@ -166,10 +253,11 @@ export class JobService {
          WHERE j.id = $1`,
         [id]
       );
-      return res.rows[0] || null;
+      return res.rows[0] ? formatJobResponse(res.rows[0]) : null;
     } catch (err: any) {
       if (config.env === 'development' || !config.isProduction) {
-        return inMemoryJobs.find((j: any) => String(j.id) === String(id)) || null;
+        const found = inMemoryJobs.find((j: any) => String(j.id) === String(id));
+        return found ? formatJobResponse(found) : null;
       }
       throw err;
     }
@@ -179,8 +267,11 @@ export class JobService {
     const allowed = [
       'title', 'department', 'type', 'location_type', 'location', 'description',
       'requirements', 'responsibilities', 'disability_accommodations', 'min_salary',
-      'max_salary', 'currency', 'experience_level', 'education_level', 'deadline', 'status'
+      'max_salary', 'currency', 'experience_level', 'education_level', 'deadline', 'status',
+      'is_verified', 'benefits', 'recruiter_info', 'application_form_config', 'faqs'
     ];
+
+    const jsonbFields = ['recruiter_info', 'application_form_config', 'faqs'];
 
     const fields: string[] = [];
     const values: any[] = [id];
@@ -188,9 +279,14 @@ export class JobService {
 
     for (const key of allowed) {
       const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
-      if (data[camel] !== undefined) {
+      const val = data[camel] !== undefined ? data[camel] : data[key];
+      if (val !== undefined) {
         fields.push(`${key} = $${idx++}`);
-        values.push(data[camel]);
+        if (jsonbFields.includes(key)) {
+          values.push(typeof val === 'string' ? val : JSON.stringify(val));
+        } else {
+          values.push(val);
+        }
       }
     }
 
@@ -204,13 +300,13 @@ export class JobService {
         values
       );
 
-      return res.rows[0];
+      return formatJobResponse(res.rows[0]);
     } catch (err: any) {
       if (config.env === 'development' || !config.isProduction) {
         const job = inMemoryJobs.find((j: any) => String(j.id) === String(id));
         if (job) {
           Object.assign(job, data, { updated_at: new Date().toISOString() });
-          return job;
+          return formatJobResponse(job);
         }
       }
       throw err;
@@ -246,7 +342,7 @@ export class JobService {
     if (!current) return [];
 
     const res = await query(
-      `SELECT j.*, o.name as org_name, o.logo_url as org_logo
+      `SELECT j.*, o.name as org_name, o.logo_url as org_logo, o.website as org_website
        FROM jobs j
        JOIN organizations o ON j.org_id = o.id
        WHERE j.id != $1 AND (j.type = $2 OR j.location_type = $3) AND j.status = 'open'
@@ -255,6 +351,6 @@ export class JobService {
       [jobId, current.type, current.location_type]
     );
 
-    return res.rows;
+    return res.rows.map(r => formatJobResponse(r));
   }
 }

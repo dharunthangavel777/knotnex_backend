@@ -6,6 +6,135 @@ import { EventStatus } from '../types/enums';
 
 export const inMemoryEvents: any[] = [];
 
+export function formatEventResponse(row: any) {
+  if (!row) return null;
+  const parseJson = (val: any, fallback: any = null) => {
+    if (!val) return fallback;
+    if (typeof val === 'object') return val;
+    try {
+      return JSON.parse(val);
+    } catch {
+      return fallback;
+    }
+  };
+
+  const schedule = parseJson(row.schedule, []);
+  const speakers = parseJson(row.speakers, []);
+  const faqs = parseJson(row.faqs, []);
+  const volunteers = parseJson(row.volunteers, []);
+  const sponsors = parseJson(row.sponsors, []);
+  const regSettings = parseJson(row.registration_settings, {});
+  const accFeatures = parseJson(row.accessibility_features, {});
+  const contactEmerg = parseJson(row.contact_and_emergency, {});
+  const mediaAttach = parseJson(row.media_attachments, {});
+  const merchantAcc = parseJson(row.merchant_account, null);
+
+  const eventDate = row.event_date
+    ? (row.event_date instanceof Date ? row.event_date.toISOString().split('T')[0] : String(row.event_date).split('T')[0])
+    : '';
+  const startTime = row.start_time ? String(row.start_time).substring(0, 8) : '';
+  const endTime = row.end_time ? String(row.end_time).substring(0, 8) : '';
+
+  return {
+    ...row,
+    schedule,
+    speakers,
+    faqs,
+    volunteers,
+    sponsors,
+    registration_settings: regSettings,
+    accessibility_features: accFeatures,
+    contact_and_emergency: contactEmerg,
+    media_attachments: mediaAttach,
+    merchant_account: merchantAcc,
+
+    // Nested DTO contract directly matching Flutter EventModel
+    dateAndTime: {
+      eventDate,
+      startTime,
+      endTime,
+      registrationOpens: row.registration_opens,
+      registrationDeadline: row.registration_deadline || '',
+      timeZone: row.timezone || 'IST',
+    },
+    location: {
+      venueName: row.venue_name || '',
+      address: row.address || '',
+      landmark: row.landmark || '',
+      district: row.district || '',
+      state: row.state || '',
+      pincode: row.pincode || '',
+      googleMapsLink: row.google_maps_link || '',
+      meetingPlatform: row.meeting_platform || '',
+      meetingLink: row.meeting_link || '',
+      passcode: row.meeting_passcode || '',
+    },
+    organizer: {
+      name: row.org_name || 'KnotNex Organizer',
+      avatar: row.org_logo || null,
+      organization: row.org_name || 'KnotNex',
+      contactPerson: row.contact_person || 'Coordinator',
+      email: row.contact_email || 'events@knotnex.org',
+      phone: row.contact_phone || '',
+      website: row.org_website || null,
+      merchantAccount: merchantAcc,
+    },
+    accessibility: {
+      wheelchairAccessible: Boolean(row.wheelchair_accessible || accFeatures.wheelchairAccessible),
+      accessibleParking: Boolean(accFeatures.accessibleParking),
+      accessibleRestroom: Boolean(accFeatures.accessibleRestroom),
+      rampAvailable: Boolean(accFeatures.rampAvailable),
+      elevatorAvailable: Boolean(accFeatures.elevatorAvailable),
+      signLanguageInterpreter: Boolean(row.sign_language || accFeatures.signLanguageInterpreter || accFeatures.signLanguage),
+      liveCaptioning: Boolean(accFeatures.liveCaptioning),
+      brailleMaterials: Boolean(row.braille_material || accFeatures.brailleMaterials || accFeatures.brailleMaterial),
+      hearingLoop: Boolean(accFeatures.hearingLoop),
+      assistanceVolunteers: Boolean(accFeatures.assistanceVolunteers),
+      caregiverAllowed: Boolean(accFeatures.caregiverAllowed),
+    },
+    details: {
+      speakers,
+      schedule,
+      sponsors,
+      volunteers,
+      faqs,
+      chiefGuests: Array.isArray(row.chief_guests) ? row.chief_guests : [],
+      maximumParticipants: row.capacity,
+      dressCode: row.dress_code || null,
+    },
+    registrationSettings: {
+      registrationRequired: regSettings.registrationRequired !== false,
+      approvalRequired: Boolean(regSettings.approvalRequired),
+      isPaid: !row.is_free,
+      ticketPrice: Number(row.ticket_price || 0),
+      registrationLimit: row.capacity || regSettings.registrationLimit,
+      waitingList: Boolean(regSettings.waitingList),
+      qrCheckIn: regSettings.qrCheckIn !== false,
+      certificateAvailable: Boolean(regSettings.certificateAvailable),
+      customQuestions: regSettings.customQuestions || [],
+      merchantAccount: merchantAcc,
+    },
+    media: {
+      galleryImages: Array.isArray(row.gallery) && row.gallery.length > 0 ? row.gallery : (mediaAttach.galleryImages || []),
+      videos: mediaAttach.videos || [],
+      brochurePdf: mediaAttach.brochurePdf || null,
+      eventRulesPdf: mediaAttach.eventRulesPdf || null,
+    },
+    contactAndEmergency: {
+      emergencyContact: contactEmerg.emergencyContact || contactEmerg.phone || row.contact_phone || null,
+      helpDeskNumber: contactEmerg.helpDeskNumber || contactEmerg.helpDesk || null,
+      medicalSupportAvailable: Boolean(contactEmerg.medicalSupportAvailable),
+      ambulanceAvailable: Boolean(contactEmerg.ambulanceAvailable),
+    },
+    // Top-level field aliases matching Flutter EventModel & Admin models
+    coverUrl: row.cover_url || '',
+    shortDescription: row.short_description || '',
+    detailedDescription: row.detailed_description || '',
+    isVerified: Boolean(row.is_verified),
+    participantsCount: Number(row.registered_count || 0),
+  };
+}
+
 export class EventService {
   static async createEvent(orgId: string, userId: string, data: any) {
     const title = data.title || data.name || 'Untitled Event';
@@ -19,6 +148,17 @@ export class EventService {
     const isFree = data.isFree !== undefined ? data.isFree : ticketPrice === 0;
     const initialStatus = data.status || EventStatus.PENDING_VERIFICATION;
 
+    const schedule = JSON.stringify(data.schedule || data.sessions || []);
+    const speakers = JSON.stringify(data.speakers || []);
+    const chiefGuests = Array.isArray(data.chiefGuests) ? data.chiefGuests : [];
+    const faqs = JSON.stringify(data.faqs || []);
+    const volunteers = JSON.stringify(data.volunteers || []);
+    const regSettings = JSON.stringify(data.registrationSettings || data.registration_settings || {});
+    const accFeatures = JSON.stringify(data.accessibilityFeatures || data.accessibility || {});
+    const contactEmerg = JSON.stringify(data.contactAndEmergency || data.contact_and_emergency || data.contact || {});
+    const mediaAttach = JSON.stringify(data.mediaAttachments || data.media || {});
+    const merchantAcc = JSON.stringify(data.merchantAccount || data.merchant_account || null);
+
     try {
       const res = await query(
         `INSERT INTO events (
@@ -28,11 +168,15 @@ export class EventService {
           venue_name, address, district, state, google_maps_link,
           meeting_platform, meeting_link, wheelchair_accessible, sign_language,
           braille_material, capacity, is_free, ticket_price, status, eligibility,
-          sponsors, gallery, contact_email, is_verified
+          sponsors, gallery, contact_email, is_verified,
+          schedule, speakers, chief_guests, faqs, volunteers,
+          registration_settings, accessibility_features, contact_and_emergency,
+          media_attachments, merchant_account, landmark, pincode, meeting_passcode
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
           $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31,
-          $32, $33, $34, $35
+          $32, $33, $34, $35,
+          $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48
         ) RETURNING *`,
         [
           orgId,
@@ -70,12 +214,25 @@ export class EventService {
           data.gallery || [],
           data.contactEmail || null,
           initialStatus === EventStatus.PUBLISHED,
+          schedule,
+          speakers,
+          chiefGuests,
+          faqs,
+          volunteers,
+          regSettings,
+          accFeatures,
+          contactEmerg,
+          mediaAttach,
+          merchantAcc,
+          data.landmark || null,
+          data.pincode || null,
+          data.meetingPasscode || data.passcode || null,
         ]
       );
 
       const created = res.rows[0];
       inMemoryEvents.unshift(created);
-      return created;
+      return formatEventResponse(created);
     } catch (err: any) {
       if (config.env === 'development' || !config.isProduction) {
         const devEvent = {
@@ -99,11 +256,21 @@ export class EventService {
           ticket_price: ticketPrice,
           status: initialStatus,
           is_verified: initialStatus === EventStatus.PUBLISHED,
+          schedule: data.schedule || data.sessions || [],
+          speakers: data.speakers || [],
+          chief_guests: chiefGuests,
+          faqs: data.faqs || [],
+          volunteers: data.volunteers || [],
+          registration_settings: data.registrationSettings || {},
+          accessibility_features: data.accessibilityFeatures || {},
+          contact_and_emergency: data.contactAndEmergency || {},
+          media_attachments: data.mediaAttachments || {},
+          merchant_account: data.merchantAccount || null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
         inMemoryEvents.unshift(devEvent);
-        return devEvent;
+        return formatEventResponse(devEvent);
       }
       throw err;
     }
@@ -160,7 +327,7 @@ export class EventService {
       const total = parseInt(countRes.rows[0].count, 10);
 
       const eventsRes = await query(
-        `SELECT e.*, o.name as org_name, o.logo_url as org_logo
+        `SELECT e.*, o.name as org_name, o.logo_url as org_logo, o.website as org_website
          FROM events e
          JOIN organizations o ON e.org_id = o.id
          ${whereClause}
@@ -169,7 +336,8 @@ export class EventService {
         [...values, limit, offset]
       );
 
-      return buildPaginatedResult(eventsRes.rows, total, page, limit);
+      const formattedRows = eventsRes.rows.map(r => formatEventResponse(r));
+      return buildPaginatedResult(formattedRows, total, page, limit);
     } catch (err: any) {
       if (config.env === 'development' || !config.isProduction) {
         let filtered = [...inMemoryEvents];
@@ -181,7 +349,8 @@ export class EventService {
         } else if (!params.orgId) {
           filtered = filtered.filter(e => ['published', 'upcoming', 'ongoing'].includes(e.status));
         }
-        return buildPaginatedResult(filtered, filtered.length, page, limit);
+        const formatted = filtered.map(e => formatEventResponse(e));
+        return buildPaginatedResult(formatted, formatted.length, page, limit);
       }
       throw err;
     }
@@ -190,16 +359,17 @@ export class EventService {
   static async getEventById(id: string) {
     try {
       const res = await query(
-        `SELECT e.*, o.name as org_name, o.logo_url as org_logo, o.about as org_about
+        `SELECT e.*, o.name as org_name, o.logo_url as org_logo, o.about as org_about, o.website as org_website
          FROM events e
          JOIN organizations o ON e.org_id = o.id
          WHERE e.id = $1`,
         [id]
       );
-      return res.rows[0] || null;
+      return res.rows[0] ? formatEventResponse(res.rows[0]) : null;
     } catch (err: any) {
       if (config.env === 'development' || !config.isProduction) {
-        return inMemoryEvents.find((e: any) => String(e.id) === String(id)) || null;
+        const found = inMemoryEvents.find((e: any) => String(e.id) === String(id));
+        return found ? formatEventResponse(found) : null;
       }
       throw err;
     }
@@ -218,8 +388,18 @@ export class EventService {
     const allowed = [
       'title', 'category', 'type', 'cover_url', 'short_description', 'detailed_description',
       'language', 'event_date', 'start_time', 'end_time', 'timezone', 'venue_name', 'address',
-      'district', 'state', 'wheelchair_accessible', 'sign_language', 'braille_material',
-      'capacity', 'is_free', 'ticket_price', 'status'
+      'district', 'state', 'google_maps_link', 'meeting_platform', 'meeting_link',
+      'wheelchair_accessible', 'sign_language', 'braille_material', 'capacity', 'is_free',
+      'ticket_price', 'status', 'is_verified', 'eligibility', 'sponsors', 'gallery', 'contact_email',
+      'schedule', 'speakers', 'chief_guests', 'faqs', 'volunteers', 'registration_settings',
+      'accessibility_features', 'contact_and_emergency', 'media_attachments', 'merchant_account',
+      'landmark', 'pincode', 'meeting_passcode'
+    ];
+
+    const jsonbFields = [
+      'schedule', 'speakers', 'faqs', 'volunteers', 'sponsors',
+      'registration_settings', 'accessibility_features', 'contact_and_emergency',
+      'media_attachments', 'merchant_account'
     ];
 
     const fields: string[] = [];
@@ -228,9 +408,14 @@ export class EventService {
 
     for (const key of allowed) {
       const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
-      if (data[camel] !== undefined) {
+      const val = data[camel] !== undefined ? data[camel] : data[key];
+      if (val !== undefined) {
         fields.push(`${key} = $${idx++}`);
-        values.push(data[camel]);
+        if (jsonbFields.includes(key)) {
+          values.push(typeof val === 'string' ? val : JSON.stringify(val));
+        } else {
+          values.push(val);
+        }
       }
     }
 
@@ -244,13 +429,13 @@ export class EventService {
         values
       );
 
-      return res.rows[0];
+      return formatEventResponse(res.rows[0]);
     } catch (err: any) {
       if (config.env === 'development' || !config.isProduction) {
         const ev = inMemoryEvents.find((e: any) => String(e.id) === String(id));
         if (ev) {
           Object.assign(ev, data, { updated_at: new Date().toISOString() });
-          return ev;
+          return formatEventResponse(ev);
         }
       }
       throw err;
@@ -294,7 +479,7 @@ export class EventService {
     if (!currentEvent) return [];
 
     const res = await query(
-      `SELECT e.*, o.name as org_name, o.logo_url as org_logo
+      `SELECT e.*, o.name as org_name, o.logo_url as org_logo, o.website as org_website
        FROM events e
        JOIN organizations o ON e.org_id = o.id
        WHERE e.id != $1 AND (e.category = $2 OR e.type = $3) AND e.event_date >= CURRENT_DATE
@@ -303,6 +488,6 @@ export class EventService {
       [eventId, currentEvent.category, currentEvent.type]
     );
 
-    return res.rows;
+    return res.rows.map(r => formatEventResponse(r));
   }
 }
