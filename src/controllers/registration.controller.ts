@@ -79,6 +79,24 @@ export class RegistrationController {
     }
   }
 
+  static async checkInById(req: Request, res: Response) {
+    try {
+      const result = await RegistrationService.checkInById(req.params.id);
+      return ApiResponse.success(res, result, 'Check-in verified successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async cancel(req: Request, res: Response) {
+    try {
+      const result = await RegistrationService.cancelRegistration(req.params.id, req.user!.id);
+      return ApiResponse.success(res, result, 'Registration cancelled');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
   static async getQrPass(req: Request, res: Response) {
     try {
       const pass = await RegistrationService.getQrPass(req.params.id, req.user!.id);

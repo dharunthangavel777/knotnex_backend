@@ -15,6 +15,8 @@ router.get('/user/:userId', authenticate, RegistrationController.listByUser);
 router.get('/:id', authenticate, RegistrationController.getById);
 router.patch('/:id/status', authenticate, requireOrgOrAdmin, validate(updateRegistrationStatusSchema), RegistrationController.updateStatus);
 router.post('/check-in', authenticate, requireOrgOrAdmin, RegistrationController.checkInByQr);
+router.post('/:id/checkin', authenticate, RegistrationController.checkInById);
+router.delete('/:id', authenticate, RegistrationController.cancel);
 router.get('/:id/qr-pass', authenticate, RegistrationController.getQrPass);
 
 export default router;

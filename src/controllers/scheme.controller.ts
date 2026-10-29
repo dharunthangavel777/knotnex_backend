@@ -99,5 +99,22 @@ export class SchemeController {
       return ApiResponse.error(res, error.message, 500);
     }
   }
-}
 
+  static async saveScheme(req: Request, res: Response) {
+    try {
+      const result = await SchemeService.saveScheme(req.user!.id, req.params.id);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async unsaveScheme(req: Request, res: Response) {
+    try {
+      const result = await SchemeService.unsaveScheme(req.user!.id, req.params.id);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+}

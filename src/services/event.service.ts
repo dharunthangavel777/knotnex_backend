@@ -1,9 +1,8 @@
-import fs from 'fs';
-import path from 'path';
 import { query } from '../config/database';
 import { generateSlug } from '../utils/slug.util';
 import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
 import { EventStatus } from '../types/enums';
+import { config } from '../config';
 
 export const inMemoryEvents: any[] = [];
 
@@ -36,8 +35,8 @@ export class EventService {
           $32, $33, $34, $35
         ) RETURNING *`,
         [
-          validOrgId,
-          validUserId,
+          orgId,
+          userId,
           title,
           slug,
           data.category || 'General',
@@ -117,6 +116,7 @@ export class EventService {
     type?: string;
     status?: string;
     search?: string;
+    orgId?: string;
   }) {
     const { page, limit, offset } = getPagination(params);
 
@@ -144,6 +144,7 @@ export class EventService {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
+    try {
       const countRes = await query(`SELECT COUNT(*) FROM events ${whereClause}`, values);
       const total = parseInt(countRes.rows[0].count, 10);
 
@@ -203,13 +204,6 @@ export class EventService {
       data.ticketPrice = parseFloat(data.ticketPrice.replace(/[^0-9.]/g, '')) || 0;
     }
 
-    const allowed = [
-      'title', 'category', 'type', 'cover_url', 'short_description', 'detailed_description',
-      'language', 'event_date', 'start_time', 'end_time', 'timezone', 'venue_name', 'address',
-      'district', 'state', 'wheelchair_accessible', 'sign_language', 'braille_material',
-      'capacity', 'is_free', 'ticket_price', 'status'
-    ];
-
     const fields: string[] = [];
     const values: any[] = [id];
     let idx = 2;
@@ -256,16 +250,19 @@ export class EventService {
   }
 
   static async deleteEvent(id: string) {
-    if (canAttemptDb()) {
-      try {
-        await query(`DELETE FROM events WHERE id = $1`, [id]);
-      } catch (_) {
-        recordDbFailure();
+    try {
+      await query(`DELETE FROM events WHERE id = $1`, [id]);
+    } catch (err: any) {
+      if (config.env === 'development' || !config.isProduction) {
+        const idx = inMemoryEvents.findIndex((e: any) => String(e.id) === String(id));
+        if (idx !== -1) inMemoryEvents.splice(idx, 1);
+        return { success: true };
       }
+      throw err;
     }
 
-    const devList = readDevEvents();
-    writeDevEvents(devList.filter(e => String(e.id) !== String(id)));
+    const idx = inMemoryEvents.findIndex((e: any) => String(e.id) === String(id));
+    if (idx !== -1) inMemoryEvents.splice(idx, 1);
     return { success: true };
   }
 

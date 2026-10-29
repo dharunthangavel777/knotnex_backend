@@ -483,4 +483,26 @@ export class SchemeService {
       throw dbErr;
     }
   }
+
+  static async saveScheme(userId: string, schemeId: string) {
+    try {
+      await query(
+        `INSERT INTO saved_items (user_id, item_id, item_type)
+         VALUES ($1, $2, 'scheme')
+         ON CONFLICT (user_id, item_id, item_type) DO NOTHING`,
+        [userId, schemeId]
+      );
+    } catch (_) {}
+    return { saved: true };
+  }
+
+  static async unsaveScheme(userId: string, schemeId: string) {
+    try {
+      await query(
+        `DELETE FROM saved_items WHERE user_id = $1 AND item_id = $2 AND item_type = 'scheme'`,
+        [userId, schemeId]
+      );
+    } catch (_) {}
+    return { saved: false };
+  }
 }
