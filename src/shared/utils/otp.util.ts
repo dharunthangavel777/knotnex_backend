@@ -9,6 +9,7 @@ import { query } from '../../config/database';
 const OTP_PREFIX = {
   SIGNUP: 'otp:signup:',
   PASSWORD_RESET: 'otp:reset:',
+  ADMIN_LOGIN: 'otp:admin:',
 };
 
 const OTP_ATTEMPT_PREFIX = 'otp:attempts:';
@@ -16,6 +17,7 @@ const OTP_ATTEMPT_PREFIX = 'otp:attempts:';
 const OTP_TTL_SECONDS = {
   SIGNUP: 600,         // 10 minutes
   PASSWORD_RESET: 900, // 15 minutes
+  ADMIN_LOGIN: 600,    // 10 minutes
 };
 
 const MAX_OTP_ATTEMPTS = 5;
@@ -52,15 +54,20 @@ export async function ensureOtpTable(): Promise<void> {
 }
 
 /**
- * Generates a 4-digit OTP (1000–9999)
+ * Generates an OTP (4 digits for regular flows, 6 digits for admin)
  */
-function generateOtp(): string {
+function generateOtp(digits: number = 4): string {
+  if (digits === 6) {
+    const min = 100000;
+    const max = 999999;
+    return (Math.floor(Math.random() * (max - min + 1)) + min).toString();
+  }
   const min = 1000;
   const max = 9999;
   return (Math.floor(Math.random() * (max - min + 1)) + min).toString();
 }
 
-export type OtpType = 'SIGNUP' | 'PASSWORD_RESET';
+export type OtpType = 'SIGNUP' | 'PASSWORD_RESET' | 'ADMIN_LOGIN';
 
 /**
  * Creates and stores an OTP in PostgreSQL (and memory) for the given email + type.
@@ -68,7 +75,7 @@ export type OtpType = 'SIGNUP' | 'PASSWORD_RESET';
 export async function createOtp(email: string, type: OtpType): Promise<string> {
   const cleanEmail = email.toLowerCase().trim();
   const key = `${OTP_PREFIX[type]}${cleanEmail}`;
-  const otp = generateOtp();
+  const otp = generateOtp(type === 'ADMIN_LOGIN' ? 6 : 4);
   const ttl = OTP_TTL_SECONDS[type];
 
   // 1. Keep memory cache

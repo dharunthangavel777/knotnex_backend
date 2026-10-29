@@ -194,4 +194,31 @@ export class AuthController {
       return ApiResponse.error(res, error.message, 401, 'SSO_VERIFICATION_FAILED');
     }
   }
+
+  // POST /auth/admin/send-otp
+  static async sendAdminOtp(req: Request, res: Response) {
+    try {
+      const { email } = req.body;
+      const result = await AuthService.requestAdminOtp(email);
+      return ApiResponse.success(res, result, result.message);
+    } catch (error: any) {
+      logger.warn('[AuthController] sendAdminOtp error', { error: error.message, email: req.body?.email });
+      const statusCode = error.statusCode || 400;
+      return ApiResponse.error(res, error.message, statusCode, error.code || 'ADMIN_OTP_FAILED');
+    }
+  }
+
+  // POST /auth/admin/verify-otp
+  static async verifyAdminOtp(req: Request, res: Response) {
+    try {
+      const { email, otp } = req.body;
+      const result = await AuthService.verifyAdminOtp(email, otp);
+      return ApiResponse.success(res, result, 'Super admin authenticated successfully');
+    } catch (error: any) {
+      logger.warn('[AuthController] verifyAdminOtp error', { error: error.message, email: req.body?.email });
+      const statusCode = error.statusCode || 400;
+      return ApiResponse.error(res, error.message, statusCode, error.code || 'ADMIN_VERIFY_FAILED');
+    }
+  }
+
 }

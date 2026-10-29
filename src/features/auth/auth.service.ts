@@ -629,4 +629,143 @@ export class AuthService {
       logger.warn(`[AuthService] Device registration failed: ${err.message}`);
     }
   }
+
+  // ─── Super Admin OTP Flow ────────────────────────────────────────────────
+  
+  static readonly AUTHORIZED_SUPER_ADMIN_EMAILS = [
+    'dharuncod@gmail.com',
+    'praveen12rangasamy@gmail.com',
+  ];
+
+  /**
+   * Validates if the email belongs to an authorized super admin.
+   * If authorized, generates a 6-digit OTP and dispatches via Brevo.
+   */
+  static async requestAdminOtp(email: string) {
+    const normalizedEmail = email.toLowerCase().trim();
+
+    // 1. Strict Whitelist Verification
+    const isWhitelisted = this.AUTHORIZED_SUPER_ADMIN_EMAILS.includes(normalizedEmail);
+
+    let dbAdmin: any = null;
+    try {
+      // Query PostgreSQL admin_whitelist or users table
+      const res = await query(
+        `SELECT id, email, full_name, role, is_banned 
+         FROM users 
+         WHERE LOWER(email) = $1 AND role = 'admin'`,
+        [normalizedEmail]
+      );
+      if (res.rowCount && res.rowCount > 0) {
+        dbAdmin = res.rows[0];
+      }
+    } catch (dbErr: any) {
+      logger.warn(`[AuthService] DB lookup for super admin note: ${dbErr.message}`);
+    }
+
+    if (!isWhitelisted && !dbAdmin) {
+      logger.warn(`[AuthService] Unauthorized admin access attempt: ${normalizedEmail}`);
+      const err: any = new Error('Access denied: Your email is not authorized for super admin access.');
+      err.statusCode = 403;
+      err.code = 'FORBIDDEN_SUPER_ADMIN';
+      throw err;
+    }
+
+    if (dbAdmin && dbAdmin.is_banned) {
+      const err: any = new Error('This administrator account has been suspended.');
+      err.statusCode = 403;
+      err.code = 'ADMIN_SUSPENDED';
+      throw err;
+    }
+
+    const adminName = dbAdmin?.full_name || (normalizedEmail.startsWith('dharun') ? 'Dharun' : 'Praveen');
+
+    // 2. Generate 6-digit OTP with 10-minute validity
+    const otp = await createOtp(normalizedEmail, 'ADMIN_LOGIN');
+
+    // 3. Dispatch branded email via Brevo
+    await EmailService.sendAdminLoginOtp(normalizedEmail, adminName, otp);
+
+    logger.info(`[AuthService] Super Admin login OTP dispatched to ${normalizedEmail}`);
+
+    return {
+      message: 'Verification code sent to your authorized super admin email.',
+      email: normalizedEmail,
+      expiresIn: 600,
+    };
+  }
+
+  /**
+   * Verifies the 6-digit OTP and returns super admin JWT tokens.
+   */
+  static async verifyAdminOtp(email: string, otp: string) {
+    const normalizedEmail = email.toLowerCase().trim();
+    const cleanOtp = otp.trim();
+
+    // 1. Verify authorized whitelist
+    const isWhitelisted = this.AUTHORIZED_SUPER_ADMIN_EMAILS.includes(normalizedEmail);
+    if (!isWhitelisted) {
+      const err: any = new Error('Access denied: Unauthorized email address.');
+      err.statusCode = 403;
+      err.code = 'FORBIDDEN_SUPER_ADMIN';
+      throw err;
+    }
+
+    // 2. Verify OTP
+    await verifyOtp(normalizedEmail, 'ADMIN_LOGIN', cleanOtp);
+
+    // 3. Find or synthesize super admin user
+    let userRecord: AuthUser;
+    try {
+      const res = await query(
+        `SELECT * FROM users WHERE LOWER(email) = $1 LIMIT 1`,
+        [normalizedEmail]
+      );
+
+      if (res.rowCount && res.rowCount > 0) {
+        userRecord = rowToAuthUser(res.rows[0]);
+        // Update last login in admin_whitelist if table exists
+        query(`UPDATE admin_whitelist SET last_login_at = NOW() WHERE LOWER(email) = $1`, [normalizedEmail]).catch(() => {});
+      } else {
+        // Fallback user record
+        userRecord = {
+          id: normalizedEmail.startsWith('dharun') ? '00000000-0000-0000-0000-000000000001' : '00000000-0000-0000-0000-000000000002',
+          firebaseUid: 'admin_' + normalizedEmail.split('@')[0],
+          email: normalizedEmail,
+          fullName: normalizedEmail.startsWith('dharun') ? 'Dharun - Super Admin' : 'Praveen - Super Admin',
+          phone: null,
+          role: UserRole.ADMIN,
+          isVerified: true,
+          avatarUrl: null,
+          categorySelectionCompleted: true,
+          createdAt: new Date(),
+        };
+      }
+    } catch (err: any) {
+      logger.warn(`[AuthService] verifyAdminOtp user fetch fallback: ${err.message}`);
+      userRecord = {
+        id: normalizedEmail.startsWith('dharun') ? '00000000-0000-0000-0000-000000000001' : '00000000-0000-0000-0000-000000000002',
+        firebaseUid: 'admin_' + normalizedEmail.split('@')[0],
+        email: normalizedEmail,
+        fullName: normalizedEmail.startsWith('dharun') ? 'Dharun - Super Admin' : 'Praveen - Super Admin',
+        phone: null,
+        role: UserRole.ADMIN,
+        isVerified: true,
+        avatarUrl: null,
+        categorySelectionCompleted: true,
+        createdAt: new Date(),
+      };
+    }
+
+    // 4. Build JWT Tokens
+    const tokens = await buildTokens(userRecord);
+
+    logger.info(`[AuthService] Super Admin ${normalizedEmail} authenticated successfully via OTP`);
+
+    return {
+      user: userRecord,
+      tokens,
+    };
+  }
+
 }
