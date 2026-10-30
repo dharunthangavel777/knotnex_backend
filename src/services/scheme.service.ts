@@ -66,6 +66,14 @@ export function formatSchemeResponse(row: any) {
 
 export class SchemeService {
   static async createScheme(orgId: string | null, userId: string, data: any) {
+    let targetOrgId = orgId;
+    if (!targetOrgId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetOrgId)) {
+      targetOrgId = '20000000-0000-0000-0000-000000000001';
+    }
+    let targetUserId = userId;
+    if (!targetUserId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetUserId)) {
+      targetUserId = '00000000-0000-0000-0000-000000000001';
+    }
     const title = data.title || data.name || 'Untitled Scheme';
     const providerName = data.providerName || data.provider || data.orgName || data.department || 'KnotNex Foundation';
     const type = data.type || 'NGO';
@@ -95,8 +103,8 @@ export class SchemeService {
           $20, $21, $22, $23
         ) RETURNING *`,
         [
-          orgId || null,
-          userId,
+          targetOrgId,
+          targetUserId,
           title,
           providerName,
           type,

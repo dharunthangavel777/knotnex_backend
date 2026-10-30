@@ -78,6 +78,14 @@ export function formatJobResponse(row: any) {
 
 export class JobService {
   static async createJob(orgId: string, userId: string, data: any) {
+    let targetOrgId = orgId;
+    if (!targetOrgId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetOrgId)) {
+      targetOrgId = '20000000-0000-0000-0000-000000000001';
+    }
+    let targetUserId = userId;
+    if (!targetUserId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetUserId)) {
+      targetUserId = '00000000-0000-0000-0000-000000000001';
+    }
     const title = data.title || data.role || 'Untitled Opportunity';
     const department = data.department || data.dept || 'General';
     const type = data.type ? data.type.toLowerCase().replace(' ', '-') : 'full-time';
@@ -105,8 +113,8 @@ export class JobService {
           $17, $18, $19, $20, $21, $22, $23
         ) RETURNING *`,
         [
-          orgId,
-          userId,
+          targetOrgId,
+          targetUserId,
           title,
           department,
           type,
@@ -193,15 +201,16 @@ export class JobService {
         conditions.push(`j.location_type = $${idx++}`);
         values.push(params.locationType);
       }
+      const targetOrgId = params.orgId || (params as any).org_id;
       if (params.status) {
-        conditions.push(`j.status = $${idx++}`);
+        conditions.push(`j.status = ${idx++}`);
         values.push(params.status);
-      } else if (!params.orgId) {
+      } else if (!targetOrgId) {
         conditions.push(`j.status = 'open'`);
       }
-      if (params.orgId) {
-        conditions.push(`j.org_id = $${idx++}`);
-        values.push(params.orgId);
+      if (targetOrgId) {
+        conditions.push(`j.org_id = ${idx++}`);
+        values.push(targetOrgId);
       }
       if (params.search) {
         conditions.push(`(j.title ILIKE $${idx} OR j.description ILIKE $${idx})`);
