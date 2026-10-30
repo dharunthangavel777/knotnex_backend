@@ -52,3 +52,4 @@ ALTER TABLE schemes ADD COLUMN IF NOT EXISTS verified_by UUID REFERENCES users(i
 CREATE INDEX IF NOT EXISTS idx_schemes_org_status ON schemes(org_id, status);
 CREATE INDEX IF NOT EXISTS idx_schemes_created_by ON schemes(created_by);
 CREATE INDEX IF NOT EXISTS idx_schemes_verification_status ON schemes(is_verified, status);
+
