@@ -122,3 +122,18 @@ export const verifyPhoneOtpSchema = z.object({
     code: z.string().length(6, 'Phone OTP must be 6 digits'),
   }),
 });
+
+
+// ─── Super Admin OTP Authentication Schemas ─────────────────────────────────
+export const adminSendOtpSchema = z.object({
+  body: z.object({
+    email: z.string().email('Invalid email address format'),
+  }),
+});
+
+export const adminVerifyOtpSchema = z.object({
+  body: z.object({
+    email: z.string().email('Invalid email address format'),
+    otp: z.string().min(4, 'OTP code must be at least 4 digits').max(10, 'Invalid OTP code length'),
+  }),
+});

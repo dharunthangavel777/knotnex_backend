@@ -78,10 +78,26 @@ export function formatJobResponse(row: any) {
 
 export class JobService {
   static async createJob(orgId: string, userId: string, data: any) {
+    let targetOrgId = orgId;
+    if (!targetOrgId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetOrgId)) {
+      targetOrgId = '20000000-0000-0000-0000-000000000001';
+    }
+    let targetUserId: string | null = userId;
+    if (!targetUserId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetUserId)) {
+      targetUserId = null;
+    }
     const title = data.title || data.role || 'Untitled Opportunity';
     const department = data.department || data.dept || 'General';
-    const type = data.type ? data.type.toLowerCase().replace(' ', '-') : 'full-time';
-    const locationType = data.locationType || (data.location && data.location.toLowerCase().includes('remote') ? 'remote' : 'on-site');
+    
+    // Strict schema check constraint enforcement for type
+    let rawType = (data.type || 'full-time').toLowerCase().trim().replace(/\s+/g, '-');
+    const allowedTypes = ['full-time', 'part-time', 'internship', 'volunteer', 'contract'];
+    const type = allowedTypes.includes(rawType) ? rawType : 'full-time';
+
+    // Strict schema check constraint enforcement for location_type
+    let rawLoc = (data.locationType || data.location_type || (data.location && data.location.toLowerCase().includes('remote') ? 'remote' : 'on-site')).toLowerCase().trim();
+    if (rawLoc === 'onsite') rawLoc = 'on-site';
+    const locationType = ['remote', 'on-site', 'hybrid'].includes(rawLoc) ? rawLoc : (rawLoc.includes('remote') ? 'remote' : (rawLoc.includes('hybrid') ? 'hybrid' : 'on-site'));
     const location = data.location || 'Remote';
     const description = data.description || 'Job details and opportunities provided by KnotNex partner.';
     const requirements = Array.isArray(data.requirements) ? data.requirements : (Array.isArray(data.skills) ? data.skills : []);
@@ -105,8 +121,8 @@ export class JobService {
           $17, $18, $19, $20, $21, $22, $23
         ) RETURNING *`,
         [
-          orgId,
-          userId,
+          targetOrgId,
+          targetUserId,
           title,
           department,
           type,
@@ -193,15 +209,16 @@ export class JobService {
         conditions.push(`j.location_type = $${idx++}`);
         values.push(params.locationType);
       }
+      const targetOrgId = params.orgId || (params as any).org_id;
       if (params.status) {
-        conditions.push(`j.status = $${idx++}`);
+        conditions.push(`j.status = ${idx++}`);
         values.push(params.status);
-      } else if (!params.orgId) {
+      } else if (!targetOrgId) {
         conditions.push(`j.status = 'open'`);
       }
-      if (params.orgId) {
-        conditions.push(`j.org_id = $${idx++}`);
-        values.push(params.orgId);
+      if (targetOrgId) {
+        conditions.push(`j.org_id = ${idx++}`);
+        values.push(targetOrgId);
       }
       if (params.search) {
         conditions.push(`(j.title ILIKE $${idx} OR j.description ILIKE $${idx})`);
@@ -245,6 +262,11 @@ export class JobService {
   }
 
   static async getJobById(id: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
+    if (!isUuid) {
+      const found = inMemoryJobs.find((j: any) => String(j.id) === String(id));
+      return found ? formatJobResponse(found) : null;
+    }
     try {
       const res = await query(
         `SELECT j.*, o.name as org_name, o.logo_url as org_logo, o.about as org_about, o.website as org_website
@@ -255,15 +277,21 @@ export class JobService {
       );
       return res.rows[0] ? formatJobResponse(res.rows[0]) : null;
     } catch (err: any) {
-      if (config.env === 'development' || !config.isProduction) {
-        const found = inMemoryJobs.find((j: any) => String(j.id) === String(id));
-        return found ? formatJobResponse(found) : null;
-      }
-      throw err;
+      const found = inMemoryJobs.find((j: any) => String(j.id) === String(id));
+      return found ? formatJobResponse(found) : null;
     }
   }
 
   static async updateJob(id: string, data: any) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
+    if (!isUuid) {
+      const job = inMemoryJobs.find((j: any) => String(j.id) === String(id));
+      if (job) {
+        Object.assign(job, data, { updated_at: new Date().toISOString() });
+        return formatJobResponse(job);
+      }
+      return null;
+    }
     const allowed = [
       'title', 'department', 'type', 'location_type', 'location', 'description',
       'requirements', 'responsibilities', 'disability_accommodations', 'min_salary',
@@ -314,6 +342,12 @@ export class JobService {
   }
 
   static async deleteJob(id: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
+    if (!isUuid) {
+      const idx = inMemoryJobs.findIndex((j: any) => String(j.id) === String(id));
+      if (idx !== -1) inMemoryJobs.splice(idx, 1);
+      return { success: true };
+    }
     try {
       await query(`DELETE FROM jobs WHERE id = $1`, [id]);
       return { success: true };

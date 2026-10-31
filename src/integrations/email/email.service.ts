@@ -25,6 +25,18 @@ if (isSmtpKey) {
   logger.info('Brevo REST API email service initialized');
 }
 
+interface DailyQuotaTracker {
+  date: string;
+  count: number;
+  alertSent: boolean;
+}
+
+let quotaTracker: DailyQuotaTracker = {
+  date: new Date().toISOString().slice(0, 10),
+  count: 0,
+  alertSent: false,
+};
+
 export class EmailService {
   /**
    * Send customized HTML emails via Brevo (supports both SMTP and REST API automatically)
@@ -34,6 +46,34 @@ export class EmailService {
     if (to.endsWith('@knotnex.test') || to.startsWith('loadtest_') || process.env.NODE_ENV === 'test') {
       logger.debug('[EmailService] Test recipient detected, simulated email dispatch', { to, subject });
       return { success: true, messageId: 'simulated-test-email-id', provider: 'test_mock' };
+    }
+
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    if (quotaTracker.date !== todayUtc) {
+      quotaTracker = { date: todayUtc, count: 0, alertSent: false };
+    }
+
+    if (quotaTracker.count >= 300) {
+      logger.error('[EmailService] Daily email dispatch quota reached (300/day limit on Brevo free tier)', {
+        count: quotaTracker.count,
+        date: todayUtc,
+        recipient: to,
+      });
+      throw new Error('Daily email notification limit reached. Please contact support or try again tomorrow.');
+    }
+
+    quotaTracker.count++;
+
+    if (quotaTracker.count >= 270 && !quotaTracker.alertSent) {
+      quotaTracker.alertSent = true;
+      logger.warn('[EmailService] Brevo daily quota threshold reached (90% capacity: 270/300 emails today UTC)', {
+        count: quotaTracker.count,
+        quotaLimit: 300,
+        date: todayUtc,
+      });
+      EmailService.sendAdminQuotaAlert(quotaTracker.count).catch((err: any) => {
+        logger.error('[EmailService] Could not send admin quota alert:', { error: err.message });
+      });
     }
 
     // 1. If key is SMTP key (xsmtpsib-...)
@@ -146,6 +186,64 @@ export class EmailService {
    * 4-Digit OTP Email — Branded Template
    * type: 'signup' | 'reset'
    */
+  /**
+   * Super Admin Login OTP Email — Branded High Security Template
+   */
+  static async sendAdminLoginOtp(to: string, name: string, otp: string) {
+    const subject = '🔒 Knotnex Super Admin Portal — Verification Code';
+    const digits = otp.split('');
+
+    const body = `
+      <div style="text-align: center; margin-bottom: 20px;">
+        <span style="background: #FEF3C7; color: #92400E; padding: 6px 14px; border-radius: 9999px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">
+          Super Admin Authorization
+        </span>
+      </div>
+
+      <h2 style="color: #1E1B4B; text-align: center; margin-top: 8px;">Portal Access Code</h2>
+      <p style="text-align: center; font-size: 14.5px; color: #475569;">
+        Hello ${name || 'Administrator'},<br/>
+        Use this single-use security code to sign in to the <strong>Knotnex Admin Portal</strong> (admin.knotnex.com):
+      </p>
+
+      <div style="text-align: center; margin: 32px 0;">
+        <div style="display: inline-flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+          ${digits.map(d => `
+            <div style="
+              width: 48px;
+              height: 58px;
+              background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+              border-radius: 10px;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 28px;
+              font-weight: 800;
+              color: #ffffff;
+              box-shadow: 0 4px 12px rgba(79, 70, 229, 0.35);
+            ">${d}</div>
+          `).join('')}
+        </div>
+        <p style="margin: 16px 0 0; font-size: 14px; color: #64748b; letter-spacing: 5px; font-weight: 700;">
+          ${otp}
+        </p>
+      </div>
+
+      <div class="card" style="border-left: 4px solid #6366F1; background: #F8FAFC; padding: 14px 16px;">
+        <p style="margin: 0; font-size: 13px; color: #334155;">
+          ⏱️ This code expires in <strong>10 minutes</strong>. It can only be used once.
+        </p>
+      </div>
+
+      <p style="font-size: 12.5px; color: #94a3b8; margin-top: 24px; text-align: center;">
+        If you did not request this login code, someone may be attempting to access the administration portal. Please verify your account security.
+      </p>
+    `;
+
+    const html = this.wrapInBrandedTemplate(body);
+    return this.sendEmail(to, subject, html, `Your Knotnex Admin Portal verification code is: ${otp}`);
+  }
+
   static async sendOtpEmail(to: string, name: string, otp: string, type: 'signup' | 'reset') {
     const isSignup = type === 'signup';
     const subject = isSignup
@@ -278,5 +376,29 @@ export class EmailService {
 
     const html = this.wrapInBrandedTemplate(body);
     return this.sendEmail(to, `Update on Ticket: ${ticketSubject}`, html);
+  }
+  /**
+   * Proactive Brevo quota threshold alert to administrator
+   */
+  static async sendAdminQuotaAlert(currentCount: number) {
+    const alertRecipient = 'knotnex.developer@gmail.com';
+    const body = `
+      <h2>⚠️ Brevo Transactional Email Quota Alert</h2>
+      <p>The KnotNex platform has dispatched <strong>${currentCount} of 300</strong> daily emails for today (${quotaTracker.date} UTC).</p>
+      <div class="card" style="border-left: 4px solid #EF4444; padding: 12px; background: #FEF2F2;">
+        <p><strong>Capacity Used:</strong> ${Math.round((currentCount / 300) * 100)}%</p>
+        <p><strong>Remaining Today:</strong> ${Math.max(0, 300 - currentCount)} emails</p>
+      </div>
+      <p>Please upgrade your Brevo plan or monitor user traffic to avoid service interruption.</p>
+    `;
+    const html = this.wrapInBrandedTemplate(body);
+    if (brevoSmtpTransporter) {
+      await brevoSmtpTransporter.sendMail({
+        from: `"${config.brevo.fromName}" <${config.brevo.fromEmail}>`,
+        to: alertRecipient,
+        subject: '⚠️ KnotNex Alert: 90% Daily Email Quota Reached',
+        html,
+      });
+    }
   }
 }

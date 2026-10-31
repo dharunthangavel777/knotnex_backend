@@ -66,6 +66,14 @@ export function formatSchemeResponse(row: any) {
 
 export class SchemeService {
   static async createScheme(orgId: string | null, userId: string, data: any) {
+    let targetOrgId = orgId;
+    if (!targetOrgId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetOrgId)) {
+      targetOrgId = '20000000-0000-0000-0000-000000000001';
+    }
+    let targetUserId: string | null = userId;
+    if (!targetUserId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetUserId)) {
+      targetUserId = null;
+    }
     const title = data.title || data.name || 'Untitled Scheme';
     const providerName = data.providerName || data.provider || data.orgName || data.department || 'KnotNex Foundation';
     const type = data.type || 'NGO';
@@ -95,8 +103,8 @@ export class SchemeService {
           $20, $21, $22, $23
         ) RETURNING *`,
         [
-          orgId || null,
-          userId,
+          targetOrgId,
+          targetUserId,
           title,
           providerName,
           type,
@@ -241,6 +249,11 @@ export class SchemeService {
   }
 
   static async getSchemeById(id: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
+    if (!isUuid) {
+      const found = inMemorySchemes.find(s => String(s.id) === String(id));
+      return found ? formatSchemeResponse(found) : null;
+    }
     try {
       const res = await query(
         `SELECT s.*, o.name as org_name, o.logo_url as org_logo,
@@ -252,15 +265,21 @@ export class SchemeService {
       );
       return res.rows[0] ? formatSchemeResponse(res.rows[0]) : null;
     } catch (dbErr: any) {
-      if (config.env === 'development' || !config.isProduction) {
-        const found = inMemorySchemes.find(s => s.id === id);
-        return found ? formatSchemeResponse(found) : null;
-      }
-      throw dbErr;
+      const found = inMemorySchemes.find(s => String(s.id) === String(id));
+      return found ? formatSchemeResponse(found) : null;
     }
   }
 
   static async updateScheme(id: string, data: any) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
+    if (!isUuid) {
+      const sIdx = inMemorySchemes.findIndex(s => String(s.id) === String(id));
+      if (sIdx !== -1) {
+        inMemorySchemes[sIdx] = { ...inMemorySchemes[sIdx], ...data, updated_at: new Date().toISOString() };
+        return formatSchemeResponse(inMemorySchemes[sIdx]);
+      }
+      return null;
+    }
     const allowed = [
       'title', 'provider_name', 'type', 'category', 'description',
       'eligibility_criteria', 'benefits', 'documents_required',
@@ -311,6 +330,12 @@ export class SchemeService {
   }
 
   static async deleteScheme(id: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
+    if (!isUuid) {
+      const idx = inMemorySchemes.findIndex(s => String(s.id) === String(id));
+      if (idx !== -1) inMemorySchemes.splice(idx, 1);
+      return { success: true };
+    }
     try {
       await query(`DELETE FROM schemes WHERE id = $1`, [id]);
       return { success: true };
@@ -482,5 +507,27 @@ export class SchemeService {
       }
       throw dbErr;
     }
+  }
+
+  static async saveScheme(userId: string, schemeId: string) {
+    try {
+      await query(
+        `INSERT INTO saved_items (user_id, item_id, item_type)
+         VALUES ($1, $2, 'scheme')
+         ON CONFLICT (user_id, item_id, item_type) DO NOTHING`,
+        [userId, schemeId]
+      );
+    } catch (_) {}
+    return { saved: true };
+  }
+
+  static async unsaveScheme(userId: string, schemeId: string) {
+    try {
+      await query(
+        `DELETE FROM saved_items WHERE user_id = $1 AND item_id = $2 AND item_type = 'scheme'`,
+        [userId, schemeId]
+      );
+    } catch (_) {}
+    return { saved: false };
   }
 }

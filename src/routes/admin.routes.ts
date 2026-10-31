@@ -11,6 +11,7 @@ router.get('/users', AdminController.listAllUsers);
 router.get('/users/:id', AdminController.getUserDetails);
 router.patch('/users/:id/ban', AdminController.setBanStatus);
 router.patch('/users/:id/verify', AdminController.setVerificationStatus);
+router.post('/users/:id/send-reset-password', AdminController.sendUserPasswordReset);
 router.get('/feeds/curation', AdminController.getFeedsCuration);
 router.patch('/feeds/:postId/action', AdminController.moderateFeedPost);
 router.get('/posts', AdminController.getFeedsCuration);
@@ -29,6 +30,9 @@ router.delete('/tickets/:id', AdminController.deleteTicket);
 router.post('/tickets/clear', AdminController.clearTickets);
 
 router.patch('/organizations/:id/verify', AdminController.verifyOrganization);
+router.get('/reels', AdminController.getAdminReels);
+router.get('/campaigns', AdminController.listAdminCampaigns);
+router.delete('/campaigns/:id', AdminController.deleteAdminCampaign);
 
 // Organization Verification Management
 router.get('/verifications', AdminController.listVerificationRequests);
@@ -52,5 +56,7 @@ router.post('/schemes/:id/approve', AdminController.verifyScheme);
 router.post('/schemes/:id/reject', AdminController.rejectScheme);
 
 router.get('/troubleshooting/deep-link', AdminController.getTroubleshootingDeepLink);
+
+router.get('/audit-logs', AdminController.getAuditLogs);
 
 export default router;

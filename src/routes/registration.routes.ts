@@ -7,6 +7,9 @@ import { registerEventSchema, updateRegistrationStatusSchema } from '../validato
 
 const router = Router();
 
+router.post('/create-order', authenticate, RegistrationController.createOrder);
+router.post('/verify-payment', authenticate, RegistrationController.verifyPayment);
+router.post('/webhook', RegistrationController.handleWebhook);
 router.post('/', authenticate, validate(registerEventSchema), RegistrationController.register);
 router.get('/', authenticate, RegistrationController.listAll);
 router.get('/my-registrations', authenticate, RegistrationController.listByUser);
@@ -15,6 +18,8 @@ router.get('/user/:userId', authenticate, RegistrationController.listByUser);
 router.get('/:id', authenticate, RegistrationController.getById);
 router.patch('/:id/status', authenticate, requireOrgOrAdmin, validate(updateRegistrationStatusSchema), RegistrationController.updateStatus);
 router.post('/check-in', authenticate, requireOrgOrAdmin, RegistrationController.checkInByQr);
+router.post('/:id/checkin', authenticate, RegistrationController.checkInById);
+router.delete('/:id', authenticate, RegistrationController.cancel);
 router.get('/:id/qr-pass', authenticate, RegistrationController.getQrPass);
 
 export default router;

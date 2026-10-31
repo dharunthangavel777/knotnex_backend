@@ -17,6 +17,7 @@ export const config = {
     'http://localhost:8080',
     'https://knotnex.com',
     'https://org.knotnex.com',
+    'https://admin.knotnex.com',
     'https://api.knotnex.com',
     'https://knotnex-backend-389663780266.asia-south1.run.app',
   ].join(',')).split(',').map((s) => s.trim()),

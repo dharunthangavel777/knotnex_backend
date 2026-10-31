@@ -3,6 +3,7 @@ import { config } from '../config';
 import { generateSlug } from '../utils/slug.util';
 import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
 import { EventStatus } from '../types/enums';
+import { config } from '../config';
 
 export const inMemoryEvents: any[] = [
   {
@@ -176,8 +177,8 @@ export class EventService {
           $32, $33, $34, $35
         ) RETURNING *`,
         [
-          validOrgId,
-          validUserId,
+          orgId,
+          userId,
           title,
           slug,
           data.category || 'General',
@@ -257,7 +258,10 @@ export class EventService {
     status?: string;
     search?: string;
     orgId?: string;
+<<<<<<< HEAD
     org_id?: string;
+=======
+>>>>>>> a62269b67b1b0708a9d7f1ea3af43281ab5f5518
   }) {
     const { page, limit, offset } = getPagination(params);
     const conditions: string[] = [];
@@ -302,8 +306,13 @@ export class EventService {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     try {
+<<<<<<< HEAD
       const countRes = await query(`SELECT COUNT(*) FROM events e ${whereClause}`, values);
       const total = parseInt(countRes.rows[0]?.count || '0', 10);
+=======
+      const countRes = await query(`SELECT COUNT(*) FROM events ${whereClause}`, values);
+      const total = parseInt(countRes.rows[0].count, 10);
+>>>>>>> a62269b67b1b0708a9d7f1ea3af43281ab5f5518
 
       const eventsRes = await query(
         `SELECT e.*, o.name as org_name, o.logo_url as org_logo, o.about as org_about
@@ -403,6 +412,7 @@ export class EventService {
       } catch {}
     }
 
+<<<<<<< HEAD
     if (startTime && typeof startTime === 'string') {
       const match = startTime.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
       if (match) startTime = match[1];
@@ -424,6 +434,27 @@ export class EventService {
         status = 'ongoing';
       } else if (['upcoming'].includes(s)) {
         status = 'upcoming';
+=======
+    const fields: string[] = [];
+    const values: any[] = [id];
+    let idx = 2;
+
+    const allowed = [
+      'title', 'category', 'type', 'cover_url', 'short_description', 'detailed_description',
+      'language', 'event_date', 'start_time', 'end_time', 'timezone', 'registration_opens',
+      'registration_deadline', 'venue_name', 'address', 'district', 'state', 'google_maps_link',
+      'meeting_platform', 'meeting_link', 'wheelchair_accessible', 'sign_language',
+      'braille_material', 'capacity', 'is_free', 'ticket_price', 'status', 'eligibility',
+      'sponsors', 'gallery', 'contact_email'
+    ];
+
+    for (const key of allowed) {
+      const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
+      const val = data[camel] !== undefined ? data[camel] : data[key];
+      if (val !== undefined) {
+        fields.push(`${key} = $${idx++}`);
+        values.push(data[camel]);
+>>>>>>> a62269b67b1b0708a9d7f1ea3af43281ab5f5518
       }
     }
 
@@ -527,9 +558,12 @@ export class EventService {
   static async deleteEvent(id: string) {
     try {
       await query(`DELETE FROM events WHERE id = $1`, [id]);
+<<<<<<< HEAD
       const idx = inMemoryEvents.findIndex((e: any) => String(e.id) === String(id));
       if (idx !== -1) inMemoryEvents.splice(idx, 1);
       return { success: true };
+=======
+>>>>>>> a62269b67b1b0708a9d7f1ea3af43281ab5f5518
     } catch (err: any) {
       if (config.env === 'development' || !config.isProduction) {
         const idx = inMemoryEvents.findIndex((e: any) => String(e.id) === String(id));
@@ -538,6 +572,13 @@ export class EventService {
       }
       throw err;
     }
+<<<<<<< HEAD
+=======
+
+    const idx = inMemoryEvents.findIndex((e: any) => String(e.id) === String(id));
+    if (idx !== -1) inMemoryEvents.splice(idx, 1);
+    return { success: true };
+>>>>>>> a62269b67b1b0708a9d7f1ea3af43281ab5f5518
   }
 
   static async saveEvent(userId: string, eventId: string) {

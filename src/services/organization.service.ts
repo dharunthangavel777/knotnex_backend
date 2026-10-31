@@ -1,3 +1,6 @@
+import { config } from '../config';
+import { inMemoryJobs } from './job.service';
+import { inMemorySchemes } from './scheme.service';
 import fs from 'fs';
 import path from 'path';
 import { query } from '../config/database';
@@ -131,13 +134,14 @@ export class OrganizationService {
     const values: any[] = [id];
     let idx = 2;
 
-    const allowed = ['name', 'type', 'about', 'mission', 'vision', 'services', 'achievements', 'contact_email', 'contact_phone', 'website', 'logo_url', 'cover_url'];
+    const allowed = ['name', 'type', 'about', 'mission', 'vision', 'services', 'achievements', 'gallery', 'contact_email', 'contact_phone', 'website', 'logo_url', 'cover_url', 'social_links'];
     
     for (const key of allowed) {
       const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
-      if (data[camel] !== undefined) {
-        fields.push(`${key} = $${idx++}`);
-        values.push(data[camel]);
+      const val = data[camel] !== undefined ? data[camel] : data[key];
+      if (val !== undefined) {
+        fields.push(`${key} = ${idx++}`);
+        values.push(val);
       }
     }
 
@@ -288,21 +292,71 @@ export class OrganizationService {
     const { page, limit, offset } = getPagination(params);
 
     try {
-      const countRes = await query(`SELECT COUNT(*) FROM jobs WHERE org_id = $1`, [orgId]);
-      const total = parseInt(countRes.rows[0].count, 10);
+      let resolvedOrgId: string | null = null;
+      let resolvedUserId: string | null = null;
+
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId || '');
+      if (isUuid) {
+        resolvedOrgId = orgId;
+        resolvedUserId = orgId;
+        const orgRecord = await query(
+          `SELECT id, owner_id FROM organizations WHERE id = $1 OR owner_id = $1 LIMIT 1`,
+          [orgId]
+        );
+        if (orgRecord.rows[0]) {
+          resolvedOrgId = orgRecord.rows[0].id;
+          resolvedUserId = orgRecord.rows[0].owner_id || resolvedUserId;
+        }
+      } else if (orgId) {
+        const hex = orgId.replace(/^org-/i, '').trim().toLowerCase();
+        const matchRes = await query(
+          `SELECT o.id as org_id, o.owner_id as user_id 
+           FROM organizations o 
+           WHERE o.id::text ILIKE $1 OR o.owner_id::text ILIKE $1
+           LIMIT 1`,
+          [`${hex}%`]
+        );
+        if (matchRes.rows[0]) {
+          resolvedOrgId = matchRes.rows[0].org_id;
+          resolvedUserId = matchRes.rows[0].user_id;
+        }
+      }
+
+      if (!resolvedOrgId && !resolvedUserId) {
+        resolvedOrgId = '20000000-0000-0000-0000-000000000001';
+      }
+
+      const countRes = await query(
+        `SELECT COUNT(*) FROM jobs 
+         WHERE (
+           ($1::uuid IS NOT NULL AND (org_id = $1 OR created_by = $1))
+           OR ($2::uuid IS NOT NULL AND (org_id = $2 OR created_by = $2))
+         )`,
+        [resolvedOrgId, resolvedUserId]
+      );
+      const total = parseInt(countRes.rows[0]?.count || '0', 10);
 
       const res = await query(
         `SELECT j.*,
+                o.name as org_name, o.logo_url as org_logo,
                 COALESCE((SELECT COUNT(*) FROM job_applications a WHERE a.job_id = j.id), 0) AS applications_count
          FROM jobs j
-         WHERE j.org_id = $1
+         LEFT JOIN organizations o ON j.org_id = o.id
+         WHERE (
+           ($1::uuid IS NOT NULL AND (j.org_id = $1 OR j.created_by = $1))
+           OR ($2::uuid IS NOT NULL AND (j.org_id = $2 OR j.created_by = $2))
+         )
          ORDER BY j.created_at DESC
-         LIMIT $2 OFFSET $3`,
-        [orgId, limit, offset]
+         LIMIT $3 OFFSET $4`,
+        [resolvedOrgId, resolvedUserId, limit, offset]
       );
 
       return buildPaginatedResult(res.rows, total, page, limit);
     } catch (err: any) {
+      console.warn('[getOrgJobs] DB Notice:', err.message);
+      if (config.env === 'development' || !config.isProduction) {
+        return buildPaginatedResult(inMemoryJobs, inMemoryJobs.length, page, limit);
+      }
       return buildPaginatedResult([], 0, page, limit);
     }
   }
@@ -311,21 +365,71 @@ export class OrganizationService {
     const { page, limit, offset } = getPagination(params);
 
     try {
-      const countRes = await query(`SELECT COUNT(*) FROM schemes WHERE org_id = $1`, [orgId]);
-      const total = parseInt(countRes.rows[0].count, 10);
+      let resolvedOrgId: string | null = null;
+      let resolvedUserId: string | null = null;
+
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orgId || '');
+      if (isUuid) {
+        resolvedOrgId = orgId;
+        resolvedUserId = orgId;
+        const orgRecord = await query(
+          `SELECT id, owner_id FROM organizations WHERE id = $1 OR owner_id = $1 LIMIT 1`,
+          [orgId]
+        );
+        if (orgRecord.rows[0]) {
+          resolvedOrgId = orgRecord.rows[0].id;
+          resolvedUserId = orgRecord.rows[0].owner_id || resolvedUserId;
+        }
+      } else if (orgId) {
+        const hex = orgId.replace(/^org-/i, '').trim().toLowerCase();
+        const matchRes = await query(
+          `SELECT o.id as org_id, o.owner_id as user_id 
+           FROM organizations o 
+           WHERE o.id::text ILIKE $1 OR o.owner_id::text ILIKE $1
+           LIMIT 1`,
+          [`${hex}%`]
+        );
+        if (matchRes.rows[0]) {
+          resolvedOrgId = matchRes.rows[0].org_id;
+          resolvedUserId = matchRes.rows[0].user_id;
+        }
+      }
+
+      if (!resolvedOrgId && !resolvedUserId) {
+        resolvedOrgId = '20000000-0000-0000-0000-000000000001';
+      }
+
+      const countRes = await query(
+        `SELECT COUNT(*) FROM schemes 
+         WHERE (
+           ($1::uuid IS NOT NULL AND (org_id = $1 OR created_by = $1))
+           OR ($2::uuid IS NOT NULL AND (org_id = $2 OR created_by = $2))
+         )`,
+        [resolvedOrgId, resolvedUserId]
+      );
+      const total = parseInt(countRes.rows[0]?.count || '0', 10);
 
       const res = await query(
         `SELECT s.*,
+                o.name as org_name, o.logo_url as org_logo,
                 COALESCE((SELECT COUNT(*) FROM scheme_applications sa WHERE sa.scheme_id = s.id), 0) AS applications_count
          FROM schemes s
-         WHERE s.org_id = $1
+         LEFT JOIN organizations o ON s.org_id = o.id
+         WHERE (
+           ($1::uuid IS NOT NULL AND (s.org_id = $1 OR s.created_by = $1))
+           OR ($2::uuid IS NOT NULL AND (s.org_id = $2 OR s.created_by = $2))
+         )
          ORDER BY s.created_at DESC
-         LIMIT $2 OFFSET $3`,
-        [orgId, limit, offset]
+         LIMIT $3 OFFSET $4`,
+        [resolvedOrgId, resolvedUserId, limit, offset]
       );
 
       return buildPaginatedResult(res.rows, total, page, limit);
     } catch (err: any) {
+      console.warn('[getOrgSchemes] DB Notice:', err.message);
+      if (config.env === 'development' || !config.isProduction) {
+        return buildPaginatedResult(inMemorySchemes, inMemorySchemes.length, page, limit);
+      }
       return buildPaginatedResult([], 0, page, limit);
     }
   }

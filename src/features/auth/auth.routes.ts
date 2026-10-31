@@ -17,6 +17,8 @@ import {
   verifyForgotOtpSchema,
   resetPasswordSchema,
   refreshTokenSchema,
+  adminSendOtpSchema,
+  adminVerifyOtpSchema,
 } from './auth.validator';
 
 const router = Router();
@@ -120,5 +122,21 @@ router.get('/me', authenticate, AuthController.getMe);
 // ─── SSO (Web Portal Handoff) ────────────────────────────────────────────────
 router.post('/sso-exchange', authenticate, AuthController.ssoExchange);
 router.post('/sso-verify', AuthController.ssoVerify);
+
+
+// ─── Super Admin OTP Endpoints ──────────────────────────────────────────────
+router.post(
+  '/admin/send-otp',
+  authOtpRateLimiter,
+  validate(adminSendOtpSchema),
+  AuthController.sendAdminOtp
+);
+
+router.post(
+  '/admin/verify-otp',
+  authSigninRateLimiter,
+  validate(adminVerifyOtpSchema),
+  AuthController.verifyAdminOtp
+);
 
 export default router;

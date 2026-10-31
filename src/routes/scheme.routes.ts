@@ -16,6 +16,8 @@ router.get('/:id', optionalAuthenticate, SchemeController.getSchemeById);
 router.patch('/:id', authenticate, requireOrgOrAdmin, validate(updateSchemeSchema), SchemeController.updateScheme);
 router.delete('/:id', authenticate, requireOrgOrAdmin, SchemeController.deleteScheme);
 router.post('/:id/apply', authenticate, validate(applySchemeSchema), SchemeController.applyForScheme);
+router.post('/:id/save', authenticate, SchemeController.saveScheme);
+router.delete('/:id/save', authenticate, SchemeController.unsaveScheme);
 router.get('/:id/applications', authenticate, requireOrgOrAdmin, SchemeController.listApplications);
 router.patch('/:id/applications/:appId/status', authenticate, requireOrgOrAdmin, validate(updateSchemeApplicationStatusSchema), SchemeController.updateApplicationStatus);
 

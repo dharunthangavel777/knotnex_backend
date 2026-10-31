@@ -5,8 +5,9 @@ import { ApiResponse } from '../utils/response.util';
 export class SchemeController {
   static async createScheme(req: Request, res: Response) {
     try {
-      const orgId = req.body.orgId || req.user?.orgId || null;
-      const scheme = await SchemeService.createScheme(orgId, req.user!.id, req.body);
+      const orgId = req.body.orgId || req.body.org_id || req.user?.orgId || req.user?.id || '20000000-0000-0000-0000-000000000001';
+      const userId = req.user?.id || '00000000-0000-0000-0000-000000000001';
+      const scheme = await SchemeService.createScheme(orgId, userId, req.body);
       return ApiResponse.created(res, scheme);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);
@@ -99,5 +100,22 @@ export class SchemeController {
       return ApiResponse.error(res, error.message, 500);
     }
   }
-}
 
+  static async saveScheme(req: Request, res: Response) {
+    try {
+      const result = await SchemeService.saveScheme(req.user!.id, req.params.id);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async unsaveScheme(req: Request, res: Response) {
+    try {
+      const result = await SchemeService.unsaveScheme(req.user!.id, req.params.id);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+}
