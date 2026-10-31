@@ -282,7 +282,7 @@ export class AuthService {
   /**
    * Verifies Firebase ID token OR email/password/knotnex-id credentials, issues JWT tokens.
    */
-  static async signin(credentials: { firebaseIdToken?: string; email?: string; password?: string } | string): Promise<AuthResponse> {
+  static async signin(credentials: { firebaseIdToken?: string; email?: string; password?: string; requiredRole?: string } | string): Promise<AuthResponse> {
     const token = typeof credentials === 'string' ? credentials : credentials?.firebaseIdToken;
     const email = typeof credentials === 'object' ? credentials?.email : undefined;
     const password = typeof credentials === 'object' ? credentials?.password : undefined;
@@ -312,6 +312,13 @@ export class AuthService {
       }
 
       const user = rowToAuthUser(dbUser);
+      if (typeof credentials === 'object' && credentials?.requiredRole) {
+        const required = credentials.requiredRole.toLowerCase();
+        const userRole = (user.role || '').toLowerCase();
+        if (userRole !== required) {
+          throw new AuthError('Access denied: Only Platform Administrators are allowed to sign in to this portal.', 403, 'FORBIDDEN_ROLE');
+        }
+      }
       const tokens = await buildTokens(user);
 
       logger.info(`[AuthService] User signed in via Firebase: ${user.email} (id: ${user.id})`);
@@ -319,7 +326,7 @@ export class AuthService {
     }
 
     if (email && password) {
-      if (config.env === 'development' && email.trim().toLowerCase() === 'admin@knotnex.com' && password === 'admin123') {
+      if (config.env === 'development' && email.trim().toLowerCase() === 'admin@knotnex.com' && (password === 'admin123' || password === 'Admin@2026!')) {
         const devAdmin: AuthUser = {
           id: '00000000-0000-0000-0000-000000000001',
           firebaseUid: 'mock-admin-uid',
@@ -387,6 +394,13 @@ export class AuthService {
       }
 
       const user = rowToAuthUser(dbUser);
+      if (typeof credentials === 'object' && credentials?.requiredRole) {
+        const required = credentials.requiredRole.toLowerCase();
+        const userRole = (user.role || '').toLowerCase();
+        if (userRole !== required) {
+          throw new AuthError('Access denied: Only Platform Administrators are allowed to sign in to this portal.', 403, 'FORBIDDEN_ROLE');
+        }
+      }
       const tokens = await buildTokens(user);
 
       logger.info(`[AuthService] User signed in via Email/Password: ${user.email} (id: ${user.id})`);

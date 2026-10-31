@@ -66,4 +66,31 @@ export class TicketController {
       return ApiResponse.error(res, error.message, 400);
     }
   }
+
+  static async updateTicket(req: Request, res: Response) {
+    try {
+      const updated = await TicketService.updateTicket(req.params.id, req.body);
+      return ApiResponse.success(res, updated, 'Ticket updated successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async deleteTicket(req: Request, res: Response) {
+    try {
+      const result = await TicketService.deleteTicket(req.params.id);
+      return ApiResponse.success(res, result, 'Ticket cleared from database');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async clearTickets(req: Request, res: Response) {
+    try {
+      const result = await TicketService.clearTickets(req.body);
+      return ApiResponse.success(res, result, 'Tickets cleared successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
 }

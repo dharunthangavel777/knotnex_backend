@@ -185,4 +185,76 @@ export class AdminController {
       return ApiResponse.error(res, error.message, 400);
     }
   }
+
+  static async editFeedPost(req: Request, res: Response) {
+    try {
+      const result = await AdminService.editFeedPost(req.params.id, req.body);
+      return ApiResponse.success(res, result, 'Post updated successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async deleteFeedPost(req: Request, res: Response) {
+    try {
+      const result = await AdminService.deleteFeedPost(req.params.id);
+      return ApiResponse.success(res, result, 'Post deleted successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async getAdminReels(req: Request, res: Response) {
+    try {
+      const result = await AdminService.getAdminReels(req.query);
+      return ApiResponse.paginated(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async editReel(req: Request, res: Response) {
+    try {
+      const result = await AdminService.editReel(req.params.id, req.body);
+      return ApiResponse.success(res, result, 'Reel updated successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async moderateReel(req: Request, res: Response) {
+    try {
+      const result = await AdminService.moderateReel(req.params.id, req.body.action, req.body);
+      return ApiResponse.success(res, result, 'Reel action applied');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async deleteReel(req: Request, res: Response) {
+    try {
+      const result = await AdminService.deleteReel(req.params.id);
+      return ApiResponse.success(res, result, 'Reel deleted successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async deleteTicket(req: Request, res: Response) {
+    try {
+      const result = await AdminService.deleteTicket(req.params.id);
+      return ApiResponse.success(res, result, 'Ticket deleted successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async clearTickets(req: Request, res: Response) {
+    try {
+      const result = await AdminService.clearTickets(req.body);
+      return ApiResponse.success(res, result, 'Tickets cleared successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
 }

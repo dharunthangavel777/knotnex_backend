@@ -13,5 +13,8 @@ router.get('/:id', authenticate, TicketController.getTicketById);
 router.patch('/:id/status', authenticate, requireOrgOrAdmin, validate(updateTicketStatusSchema), TicketController.updateStatus);
 router.patch('/:id/assign', authenticate, requireAdmin, TicketController.assignTicket);
 router.post('/:id/reply', authenticate, validate(replyTicketSchema), TicketController.addReply);
+router.patch('/:id', authenticate, requireOrgOrAdmin, TicketController.updateTicket);
+router.delete('/:id', authenticate, requireAdmin, TicketController.deleteTicket);
+router.post('/clear', authenticate, requireAdmin, TicketController.clearTickets);
 
 export default router;

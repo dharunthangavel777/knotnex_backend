@@ -94,6 +94,7 @@ export enum PostType {
   POST = 'post',
   REEL = 'reel',
   WRITE = 'write',
+  REPOST = 'repost',
 }
 
 export enum TicketStatus {
