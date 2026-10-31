@@ -257,11 +257,7 @@ export class EventService {
     type?: string;
     status?: string;
     search?: string;
-    orgId?: string;
-<<<<<<< HEAD
-    org_id?: string;
-=======
->>>>>>> a62269b67b1b0708a9d7f1ea3af43281ab5f5518
+    orgId?: sg;f5518
   }) {
     const { page, limit, offset } = getPagination(params);
     const conditions: string[] = [];
@@ -309,7 +305,7 @@ export class EventService {
 <<<<<<< HEAD
       const countRes = await query(`SELECT COUNT(*) FROM events e ${whereClause}`, values);
       const total = parseInt(countRes.rows[0]?.count || '0', 10);
-=======
+======= 
       const countRes = await query(`SELECT COUNT(*) FROM events ${whereClause}`, values);
       const total = parseInt(countRes.rows[0].count, 10);
 >>>>>>> a62269b67b1b0708a9d7f1ea3af43281ab5f5518
@@ -415,7 +411,7 @@ export class EventService {
 <<<<<<< HEAD
     if (startTime && typeof startTime === 'string') {
       const match = startTime.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
-      if (match) startTime = match[1];
+     if (match) startTime = match[1];
     }
 
     // Sanitize status to database check constraint
@@ -434,7 +430,7 @@ export class EventService {
         status = 'ongoing';
       } else if (['upcoming'].includes(s)) {
         status = 'upcoming';
-=======
+======= 
     const fields: string[] = [];
     const values: any[] = [id];
     let idx = 2;
