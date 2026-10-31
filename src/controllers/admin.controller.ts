@@ -97,6 +97,33 @@ export class AdminController {
     }
   }
 
+  static async getAdminReels(req: Request, res: Response) {
+    try {
+      const reels = await AdminService.getAdminReels(req.query);
+      return ApiResponse.success(res, reels);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async listAdminCampaigns(req: Request, res: Response) {
+    try {
+      const campaigns = await AdminService.listAdminCampaigns();
+      return ApiResponse.success(res, campaigns);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async deleteAdminCampaign(req: Request, res: Response) {
+    try {
+      const result = await AdminService.deleteCampaign(req.params.id);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
   static async getTroubleshootingDeepLink(req: Request, res: Response) {
     return ApiResponse.success(res, {
       status: 'operational',
@@ -181,6 +208,25 @@ export class AdminController {
       const adminUserId = (req as any).user?.id || 'admin';
       const result = await AdminService.rejectScheme(req.params.id, adminUserId, req.body.reason);
       return ApiResponse.success(res, result, 'Scheme rejected');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async getAuditLogs(req: Request, res: Response) {
+    try {
+      const logs = await AdminService.getAuditLogs(req.query);
+      return ApiResponse.success(res, logs);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async sendUserPasswordReset(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await AdminService.sendUserPasswordReset(req.params.id, adminUserId);
+      return ApiResponse.success(res, result, result.message);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);
     }

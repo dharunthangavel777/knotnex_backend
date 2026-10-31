@@ -12,6 +12,7 @@ import registrationRoutes from './registration.routes';
 import jobRoutes from './job.routes';
 import applicationRoutes from './application.routes';
 import schemeRoutes from './scheme.routes';
+import campaignRoutes from './campaign.routes';
 import postRoutes from './post.routes';
 import chatRoutes from './chat.routes';
 import notificationRoutes from './notification.routes';
@@ -48,6 +49,7 @@ masterRouter.use('/applications', applicationRoutes);
 
 // ─── Schemes ──────────────────────────────────────────────────────────────────
 masterRouter.use('/schemes', schemeRoutes);
+masterRouter.use('/campaigns', campaignRoutes);
 
 // ─── Community / Posts ────────────────────────────────────────────────────────
 masterRouter.use('/posts', postRoutes);

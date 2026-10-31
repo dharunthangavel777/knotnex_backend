@@ -283,4 +283,64 @@ export class RegistrationService {
     );
     return res.rows[0] || null;
   }
+  static async createPaymentOrder(userId: string, eventId: string, tierName?: string) {
+    const eventRes = await query(
+      `SELECT id, title, is_free, ticket_price, total_capacity, registered_count FROM events WHERE id = $1`,
+      [eventId]
+    );
+    if (!eventRes.rows[0]) {
+      throw new Error('Event not found');
+    }
+    const ev = eventRes.rows[0];
+    const ticketPrice = Number(ev.ticket_price || 0);
+    if (ev.is_free && ticketPrice === 0) {
+      throw new Error('Event is free of charge; payment order creation is not required');
+    }
+    if (ev.total_capacity && ev.registered_count >= ev.total_capacity) {
+      throw new Error('Event has reached maximum ticket capacity');
+    }
+
+    const orderId = `order_${crypto.randomBytes(8).toString('hex')}`;
+    const amountInPaise = Math.round(ticketPrice * 100);
+
+    return {
+      orderId,
+      eventId: ev.id,
+      eventTitle: ev.title,
+      tier: tierName || 'General Admission',
+      amount: amountInPaise,
+      currency: 'INR',
+      keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_knotnex_sandbox',
+      notes: {
+        userId,
+        eventId: ev.id,
+      },
+    };
+  }
+
+  static async verifyAndRegisterPaidEvent(userId: string, payload: {
+    eventId: string;
+    orderId: string;
+    paymentId: string;
+    signature?: string;
+    personalInfo?: any;
+    accessibilityNeeds?: any;
+    consentGiven?: boolean;
+  }) {
+    if (!payload.orderId || !payload.paymentId) {
+      throw new Error('Valid orderId and paymentId are required to complete ticket issuance');
+    }
+
+    return await this.registerForEvent(userId, {
+      eventId: payload.eventId,
+      personalInfo: payload.personalInfo,
+      accessibilityNeeds: payload.accessibilityNeeds,
+      consentGiven: payload.consentGiven ?? true,
+      paymentInfo: {
+        orderId: payload.orderId,
+        paymentId: payload.paymentId,
+        verifiedAt: new Date().toISOString(),
+      },
+    });
+  }
 }

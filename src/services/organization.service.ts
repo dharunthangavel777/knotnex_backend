@@ -134,13 +134,14 @@ export class OrganizationService {
     const values: any[] = [id];
     let idx = 2;
 
-    const allowed = ['name', 'type', 'about', 'mission', 'vision', 'services', 'achievements', 'contact_email', 'contact_phone', 'website', 'logo_url', 'cover_url'];
+    const allowed = ['name', 'type', 'about', 'mission', 'vision', 'services', 'achievements', 'gallery', 'contact_email', 'contact_phone', 'website', 'logo_url', 'cover_url', 'social_links'];
     
     for (const key of allowed) {
       const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
-      if (data[camel] !== undefined) {
-        fields.push(`${key} = $${idx++}`);
-        values.push(data[camel]);
+      const val = data[camel] !== undefined ? data[camel] : data[key];
+      if (val !== undefined) {
+        fields.push(`${key} = ${idx++}`);
+        values.push(val);
       }
     }
 

@@ -25,6 +25,18 @@ if (isSmtpKey) {
   logger.info('Brevo REST API email service initialized');
 }
 
+interface DailyQuotaTracker {
+  date: string;
+  count: number;
+  alertSent: boolean;
+}
+
+let quotaTracker: DailyQuotaTracker = {
+  date: new Date().toISOString().slice(0, 10),
+  count: 0,
+  alertSent: false,
+};
+
 export class EmailService {
   /**
    * Send customized HTML emails via Brevo (supports both SMTP and REST API automatically)
@@ -34,6 +46,34 @@ export class EmailService {
     if (to.endsWith('@knotnex.test') || to.startsWith('loadtest_') || process.env.NODE_ENV === 'test') {
       logger.debug('[EmailService] Test recipient detected, simulated email dispatch', { to, subject });
       return { success: true, messageId: 'simulated-test-email-id', provider: 'test_mock' };
+    }
+
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    if (quotaTracker.date !== todayUtc) {
+      quotaTracker = { date: todayUtc, count: 0, alertSent: false };
+    }
+
+    if (quotaTracker.count >= 300) {
+      logger.error('[EmailService] Daily email dispatch quota reached (300/day limit on Brevo free tier)', {
+        count: quotaTracker.count,
+        date: todayUtc,
+        recipient: to,
+      });
+      throw new Error('Daily email notification limit reached. Please contact support or try again tomorrow.');
+    }
+
+    quotaTracker.count++;
+
+    if (quotaTracker.count >= 270 && !quotaTracker.alertSent) {
+      quotaTracker.alertSent = true;
+      logger.warn('[EmailService] Brevo daily quota threshold reached (90% capacity: 270/300 emails today UTC)', {
+        count: quotaTracker.count,
+        quotaLimit: 300,
+        date: todayUtc,
+      });
+      EmailService.sendAdminQuotaAlert(quotaTracker.count).catch((err: any) => {
+        logger.error('[EmailService] Could not send admin quota alert:', { error: err.message });
+      });
     }
 
     // 1. If key is SMTP key (xsmtpsib-...)
@@ -336,5 +376,29 @@ export class EmailService {
 
     const html = this.wrapInBrandedTemplate(body);
     return this.sendEmail(to, `Update on Ticket: ${ticketSubject}`, html);
+  }
+  /**
+   * Proactive Brevo quota threshold alert to administrator
+   */
+  static async sendAdminQuotaAlert(currentCount: number) {
+    const alertRecipient = 'knotnex.developer@gmail.com';
+    const body = `
+      <h2>⚠️ Brevo Transactional Email Quota Alert</h2>
+      <p>The KnotNex platform has dispatched <strong>${currentCount} of 300</strong> daily emails for today (${quotaTracker.date} UTC).</p>
+      <div class="card" style="border-left: 4px solid #EF4444; padding: 12px; background: #FEF2F2;">
+        <p><strong>Capacity Used:</strong> ${Math.round((currentCount / 300) * 100)}%</p>
+        <p><strong>Remaining Today:</strong> ${Math.max(0, 300 - currentCount)} emails</p>
+      </div>
+      <p>Please upgrade your Brevo plan or monitor user traffic to avoid service interruption.</p>
+    `;
+    const html = this.wrapInBrandedTemplate(body);
+    if (brevoSmtpTransporter) {
+      await brevoSmtpTransporter.sendMail({
+        from: `"${config.brevo.fromName}" <${config.brevo.fromEmail}>`,
+        to: alertRecipient,
+        subject: '⚠️ KnotNex Alert: 90% Daily Email Quota Reached',
+        html,
+      });
+    }
   }
 }
