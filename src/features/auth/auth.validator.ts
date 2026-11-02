@@ -52,6 +52,7 @@ export const signinSchema = z.object({
     firebaseIdToken: z.string().nullable().optional(),
     email: z.string().min(1, 'Email or Knotnex ID is required').optional(),
     password: z.string().min(6, 'Password must be at least 6 characters').optional(),
+    requiredRole: z.string().optional(),
   }).refine(data => !!(data.firebaseIdToken || (data.email && data.password)), {
     message: 'Either firebaseIdToken or email and password must be provided',
   }),

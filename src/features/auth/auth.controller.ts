@@ -50,11 +50,11 @@ export class AuthController {
   // POST /auth/signin & POST /auth/login
   static async signin(req: Request, res: Response) {
     try {
-      const { firebaseIdToken, email, password } = req.body;
+      const { firebaseIdToken, email, password, requiredRole } = req.body;
       const ipAddress = req.ip || req.headers['x-forwarded-for']?.toString() || '';
       const userAgent = req.headers['user-agent'] || '';
 
-      const result = await AuthService.signin({ firebaseIdToken, email, password });
+      const result = await AuthService.signin({ firebaseIdToken, email, password, requiredRole });
 
       // Register device info asynchronously (non-blocking)
       if (result.user.id) {

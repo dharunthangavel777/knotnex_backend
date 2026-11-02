@@ -74,7 +74,7 @@ export class PostService {
        RETURNING *`,
       [
         authorId,
-        data.caption    || data.content || null,
+        data.caption    || data.content || data.text || null,
         mediaUrls,
         postType,
         thumbnailUrl,

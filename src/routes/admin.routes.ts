@@ -14,8 +14,22 @@ router.patch('/users/:id/verify', AdminController.setVerificationStatus);
 router.post('/users/:id/send-reset-password', AdminController.sendUserPasswordReset);
 router.get('/feeds/curation', AdminController.getFeedsCuration);
 router.patch('/feeds/:postId/action', AdminController.moderateFeedPost);
-router.patch('/organizations/:id/verify', AdminController.verifyOrganization);
+router.get('/posts', AdminController.getFeedsCuration);
+router.patch('/posts/:id', AdminController.editFeedPost);
+router.patch('/posts/:id/action', AdminController.moderateFeedPost);
+router.delete('/posts/:id', AdminController.deleteFeedPost);
+
+// Reels & Short Videos
 router.get('/reels', AdminController.getAdminReels);
+router.patch('/reels/:id', AdminController.editReel);
+router.patch('/reels/:id/action', AdminController.moderateReel);
+router.delete('/reels/:id', AdminController.deleteReel);
+
+// Tickets Clearance via Admin
+router.delete('/tickets/:id', AdminController.deleteTicket);
+router.post('/tickets/clear', AdminController.clearTickets);
+
+router.patch('/organizations/:id/verify', AdminController.verifyOrganization);
 router.get('/campaigns', AdminController.listAdminCampaigns);
 router.delete('/campaigns/:id', AdminController.deleteAdminCampaign);
 

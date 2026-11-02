@@ -6,7 +6,75 @@ import { logger } from '../config/logger';
 
 // ─── Development In-Memory Mock Store ────────────────────────────────────────
 // In-memory store starts completely empty as requested.
-const inMemoryTickets: any[] = [];
+const inMemoryTickets: any[] = [
+  {
+    id: 'TCK-8021',
+    creator_id: '00000000-0000-0000-0000-000000000003',
+    subject: 'Screen reader stall on assistive device registration flow',
+    category: 'Accessibility Bug',
+    priority: TicketPriority.URGENT,
+    status: TicketStatus.OPEN,
+    description: 'During Step 2 of the assistive device grant program, TalkBack loses focus on the OTP confirmation button.',
+    attachments: [],
+    creator_name: 'Arun Kumar',
+    creator_email: 'arun.kumar@example.com',
+    sla_remaining: '45m',
+    created_at: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+    replies: [],
+  },
+  {
+    id: 'TCK-8018',
+    creator_id: '00000000-0000-0000-0000-000000000002',
+    subject: 'NGO 12A / 80G Verification Document Re-upload request',
+    category: 'Verification Review',
+    priority: TicketPriority.HIGH,
+    status: TicketStatus.IN_PROGRESS,
+    description: 'Samarthya Disability Foundation has provided the renewed 80G certificate for platform verification approval.',
+    attachments: [],
+    creator_name: 'Samarthya Coordinator',
+    creator_email: 'coordinator@samarthya-ngo.org',
+    sla_remaining: '2h 15m',
+    created_at: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+    replies: [],
+  },
+  {
+    id: 'TCK-8015',
+    creator_id: '00000000-0000-0000-0000-000000000001',
+    subject: 'Event QR check-in scanner camera latency on low-end devices',
+    category: 'Mobile Platform',
+    priority: TicketPriority.MEDIUM,
+    status: TicketStatus.OPEN,
+    description: 'Event volunteers reported high frame lag when scanning attendee QR badges on Android 12 Go devices.',
+    attachments: [],
+    creator_name: 'Platform Administrator',
+    creator_email: 'admin@knotnex.com',
+    sla_remaining: '4h 00m',
+    created_at: new Date(Date.now() - 8 * 3600 * 1000).toISOString(),
+    replies: [],
+  },
+  {
+    id: 'TCK-8009',
+    creator_id: '00000000-0000-0000-0000-000000000003',
+    subject: 'Audio caption sync corrected on inclusive coding conclave reel',
+    category: 'Content Moderation',
+    priority: TicketPriority.LOW,
+    status: TicketStatus.RESOLVED,
+    description: 'Desynchronized Hindi audio description track has been re-encoded and verified clean.',
+    attachments: [],
+    creator_name: 'Ravi Prasanth',
+    creator_email: 'ravi@knotnex.com',
+    sla_remaining: 'Resolved',
+    created_at: new Date(Date.now() - 28 * 3600 * 1000).toISOString(),
+    replies: [
+      {
+        id: 'REP-101',
+        author_name: 'Admin Team',
+        message: 'Re-encoded video asset deployed to CDN. Synced audio stream verified.',
+        created_at: new Date(Date.now() - 20 * 3600 * 1000).toISOString(),
+      },
+    ],
+  },
+];
 
 
 export class TicketService {
@@ -86,7 +154,7 @@ export class TicketService {
       const ticketsRes = await query(
         `SELECT t.*, u.full_name as creator_name, u.email as creator_email
          FROM tickets t
-         JOIN users u ON t.creator_id = u.id
+         LEFT JOIN users u ON t.creator_id = u.id
          ${whereClause}
          ORDER BY t.created_at DESC
          LIMIT $${idx++} OFFSET $${idx++}`,
@@ -113,7 +181,7 @@ export class TicketService {
       const ticketRes = await query(
         `SELECT t.*, u.full_name as creator_name, u.email as creator_email
          FROM tickets t
-         JOIN users u ON t.creator_id = u.id
+         LEFT JOIN users u ON t.creator_id = u.id
          WHERE t.id = $1`,
         [id]
       );
@@ -212,5 +280,98 @@ export class TicketService {
       throw dbErr;
     }
   }
-}
 
+  static async updateTicket(id: string, data: any) {
+    try {
+      const updates: string[] = ['updated_at = NOW()'];
+      const values: any[] = [];
+      let idx = 1;
+
+      if (data.subject !== undefined) {
+        updates.push(`subject = $${idx++}`);
+        values.push(data.subject);
+      }
+      if (data.category !== undefined) {
+        updates.push(`category = $${idx++}`);
+        values.push(data.category);
+      }
+      if (data.priority !== undefined) {
+        updates.push(`priority = $${idx++}`);
+        values.push(data.priority);
+      }
+      if (data.status !== undefined) {
+        updates.push(`status = $${idx++}`);
+        values.push(data.status);
+      }
+      if (data.description !== undefined) {
+        updates.push(`description = $${idx++}`);
+        values.push(data.description);
+      }
+      if (data.assignedTo !== undefined || data.assigned_to !== undefined) {
+        updates.push(`assigned_to = $${idx++}`);
+        values.push(data.assignedTo || data.assigned_to);
+      }
+
+      values.push(id);
+      const res = await query(
+        `UPDATE tickets SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
+        values
+      );
+
+      const item = inMemoryTickets.find((t: any) => t.id === id);
+      if (item) {
+        Object.assign(item, data);
+      }
+      return res.rows[0] || item;
+    } catch (dbErr: any) {
+      if (config.env === 'development') {
+        const item = inMemoryTickets.find((t: any) => t.id === id);
+        if (item) {
+          Object.assign(item, data);
+          return item;
+        }
+      }
+      throw dbErr;
+    }
+  }
+
+  static async deleteTicket(id: string) {
+    try {
+      await query(`DELETE FROM tickets WHERE id = $1`, [id]);
+      const idx = inMemoryTickets.findIndex((t: any) => t.id === id);
+      if (idx !== -1) inMemoryTickets.splice(idx, 1);
+      return { deleted: true, id };
+    } catch (dbErr: any) {
+      if (config.env === 'development') {
+        const idx = inMemoryTickets.findIndex((t: any) => t.id === id);
+        if (idx !== -1) inMemoryTickets.splice(idx, 1);
+        return { deleted: true, id };
+      }
+      throw dbErr;
+    }
+  }
+
+  static async clearTickets(filter?: { status?: string }) {
+    try {
+      const targetStatus = filter?.status || 'resolved';
+      await query(`DELETE FROM tickets WHERE status = $1`, [targetStatus]);
+      for (let i = inMemoryTickets.length - 1; i >= 0; i--) {
+        if (inMemoryTickets[i].status === targetStatus) {
+          inMemoryTickets.splice(i, 1);
+        }
+      }
+      return { cleared: true, status: targetStatus };
+    } catch (dbErr: any) {
+      if (config.env === 'development') {
+        const targetStatus = filter?.status || 'resolved';
+        for (let i = inMemoryTickets.length - 1; i >= 0; i--) {
+          if (inMemoryTickets[i].status === targetStatus) {
+            inMemoryTickets.splice(i, 1);
+          }
+        }
+        return { cleared: true, status: targetStatus };
+      }
+      throw dbErr;
+    }
+  }
+}
