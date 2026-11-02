@@ -25,7 +25,8 @@ export class RegistrationController {
 
   static async register(req: Request, res: Response) {
     try {
-      const registration = await RegistrationService.registerForEvent(req.user!.id, req.body);
+      const eventId = req.params.id || req.body.eventId || req.body.event_id;
+      const registration = await RegistrationService.registerForEvent(req.user!.id, { ...req.body, eventId });
       return ApiResponse.created(res, registration, 'Registered successfully');
     } catch (error: any) {
       const status = error.message?.includes('already registered') ? 409 : 400;
@@ -72,10 +73,23 @@ export class RegistrationController {
 
   static async checkInByQr(req: Request, res: Response) {
     try {
-      const result = await RegistrationService.checkInByQr(req.body.qrCodeHash);
-      return ApiResponse.success(res, result, 'Check-in verified successfully');
+      const codeOrHash = req.body.qrCodeHash || req.body.code || req.body.ticketCode;
+      const targetEventId = req.body.eventId || req.params.eventId || req.query.eventId;
+      const result = await RegistrationService.checkInByQr(codeOrHash, targetEventId as string, req.user?.id);
+      return ApiResponse.success(res, result, result.message || 'Check-in verified successfully');
     } catch (error: any) {
-      return ApiResponse.error(res, error.message, 400);
+      const statusCode = error.statusCode || 400;
+      return ApiResponse.error(res, error.message, statusCode, error.code, error.data);
+    }
+  }
+
+  static async getEventAttendance(req: Request, res: Response) {
+    try {
+      const eventId = req.params.eventId || req.params.id;
+      const result = await RegistrationService.getEventAttendance(eventId, req.user?.orgId);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, error.statusCode || 500);
     }
   }
 

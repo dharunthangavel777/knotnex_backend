@@ -14,6 +14,8 @@ router.post('/', authenticate, validate(registerEventSchema), RegistrationContro
 router.get('/', authenticate, RegistrationController.listAll);
 router.get('/my-registrations', authenticate, RegistrationController.listByUser);
 router.get('/event/:eventId', authenticate, requireOrgOrAdmin, RegistrationController.listByEvent);
+router.get('/event/:eventId/attendance', authenticate, requireOrgOrAdmin, RegistrationController.getEventAttendance);
+router.post('/event/:eventId/scan', authenticate, requireOrgOrAdmin, RegistrationController.checkInByQr);
 router.get('/user/:userId', authenticate, RegistrationController.listByUser);
 router.get('/:id', authenticate, RegistrationController.getById);
 router.patch('/:id/status', authenticate, requireOrgOrAdmin, validate(updateRegistrationStatusSchema), RegistrationController.updateStatus);

@@ -72,8 +72,9 @@ export class RegistrationService {
     );
 
     // Fetch event details for confirmation email & notification
-    const eventRes = await query(`SELECT title FROM events WHERE id = $1`, [eventId]);
-    const eventTitle = eventRes.rows[0]?.title || 'Knotnex Event';
+    const eventRes = await query(`SELECT id, title, event_date, start_time, venue_name FROM events WHERE id = $1`, [eventId]);
+    const eventData = eventRes.rows[0] || {};
+    const eventTitle = eventData.title || 'Knotnex Event';
 
     // In-app notification
     NotificationService.createNotification(
@@ -102,7 +103,28 @@ export class RegistrationService {
       ).catch(() => {});
     }
 
-    return registration;
+    return {
+      ...registration,
+      id: registration.id,
+      registrationId: registration.id,
+      eventId: registration.event_id,
+      event_id: registration.event_id,
+      userId: registration.user_id,
+      user_id: registration.user_id,
+      qrCode: qrCodeHash,
+      qr_code: qrCodeHash,
+      qrCodeHash,
+      qr_code_hash: qrCodeHash,
+      qrPassUrl: qrPassDataUrl || registration.qr_pass_url,
+      qr_pass_url: qrPassDataUrl || registration.qr_pass_url,
+      ticketCode: `#${qrCodeHash.substring(0, 8).toUpperCase()}`,
+      eventTitle,
+      venueName: eventData.venue_name || 'Event Venue',
+      eventDate: eventData.event_date,
+      startTime: eventData.start_time,
+      personalInfo,
+      accessibilityNeeds,
+    };
   }
 
   static async listRegistrationsByEvent(eventId: string) {
@@ -126,7 +148,21 @@ export class RegistrationService {
        ORDER BY r.created_at DESC`,
       [userId]
     );
-    return res.rows;
+    return res.rows.map((row) => ({
+      ...row,
+      registrationId: row.id,
+      eventId: row.event_id,
+      userId: row.user_id,
+      qrCode: row.qr_code_hash,
+      qr_code: row.qr_code_hash,
+      qrCodeHash: row.qr_code_hash,
+      qr_code_hash: row.qr_code_hash,
+      qrPassUrl: row.qr_pass_url,
+      qr_pass_url: row.qr_pass_url,
+      ticketCode: `#${(row.qr_code_hash || row.id).substring(0, 8).toUpperCase()}`,
+      attendanceStatus: row.checked_in_at ? 'Checked In' : 'Not Checked In',
+      checkedIn: !!row.checked_in_at,
+    }));
   }
 
   static async getRegistrationById(id: string) {
@@ -148,59 +184,210 @@ export class RegistrationService {
     return res.rows[0];
   }
 
-  static async checkInByQr(codeOrHash: string) {
-    const clean = (codeOrHash || '').trim().replace(/^#KNT-/, '').toLowerCase();
-
-    try {
-      const res = await query(
-        `SELECT r.*, u.full_name, u.email, e.title as event_title
-         FROM event_registrations r
-         JOIN users u ON r.user_id = u.id
-         JOIN events e ON r.event_id = e.id
-         WHERE r.qr_code_hash = $1
-            OR r.qr_code_hash ILIKE $2
-            OR r.id::text = $1
-         LIMIT 1`,
-        [codeOrHash, `%${clean}%`]
-      );
-
-      if (!res.rows[0]) {
-        throw new Error('Invalid QR Code or Pass Code. No matching registration found.');
-      }
-
-      const reg = res.rows[0];
-
-      if (reg.checked_in_at) {
-        return {
-          alreadyCheckedIn: true,
-          checkedInAt: reg.checked_in_at,
-          attendee: reg.full_name,
-          event: reg.event_title,
-        };
-      }
-
-      await query(
-        `UPDATE event_registrations SET checked_in_at = NOW(), status = 'attended', updated_at = NOW() WHERE id = $1`,
-        [reg.id]
-      );
-
-      return {
-        alreadyCheckedIn: false,
-        checkedInAt: new Date(),
-        attendee: reg.full_name,
-        event: reg.event_title,
-      };
-    } catch (err: any) {
-      if (config.env === 'development') {
-        return {
-          alreadyCheckedIn: false,
-          checkedInAt: new Date(),
-          attendee: 'Verified Delegate',
-          event: 'KnotNex Accessible Conference 2026',
-        };
-      }
+  static async checkInByQr(codeOrHash: string, targetEventId?: string, checkedByUserId?: string) {
+    if (!codeOrHash || typeof codeOrHash !== 'string') {
+      const err: any = new Error('Invalid QR Code – Registration Not Found.');
+      err.statusCode = 400;
+      err.code = 'INVALID_QR';
       throw err;
     }
+
+    let extractedHash = codeOrHash.trim();
+
+    // If QR payload was encoded as JSON, extract the qrHash or qrCode
+    if (extractedHash.startsWith('{') && extractedHash.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(extractedHash);
+        extractedHash = (parsed.qrHash || parsed.qrCode || parsed.qrCodeHash || parsed.registrationId || extractedHash).trim();
+      } catch {}
+    }
+
+    // Strip leading prefixes like #KNT-, #REG-, #PASS-
+    const clean = extractedHash.replace(/^#(?:KNT|REG|PASS)-/i, '').toLowerCase();
+
+    const res = await query(
+      `SELECT r.*, u.full_name, u.email, u.phone as user_phone, e.title as event_title, e.id as event_id, e.org_id, e.venue_name, e.event_date
+       FROM event_registrations r
+       JOIN users u ON r.user_id = u.id
+       JOIN events e ON r.event_id = e.id
+       WHERE r.qr_code_hash = $1
+          OR r.id::text = $1
+          OR LOWER(r.qr_code_hash) = $2
+          OR r.qr_code_hash ILIKE $3
+       LIMIT 1`,
+      [extractedHash, clean, `%${clean}%`]
+    );
+
+    if (!res.rows[0]) {
+      const err: any = new Error('Invalid QR Code – Registration Not Found.');
+      err.statusCode = 404;
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+
+    const reg = res.rows[0];
+
+    // Check cancellation
+    if (reg.status === 'cancelled' || reg.status === 'rejected' || reg.qr_status === 'REVOKED') {
+      const err: any = new Error('Registration Is No Longer Valid.');
+      err.statusCode = 400;
+      err.code = 'REGISTRATION_REVOKED';
+      throw err;
+    }
+
+    // Verify event matching if targetEventId is provided
+    if (targetEventId && String(reg.event_id).toLowerCase() !== String(targetEventId).toLowerCase()) {
+      const err: any = new Error('This QR Code Belongs to Another Event.');
+      err.statusCode = 400;
+      err.code = 'WRONG_EVENT';
+      err.data = {
+        valid: false,
+        isWrongEvent: true,
+        scannedEventTitle: reg.event_title,
+        attendee: reg.full_name,
+      };
+      throw err;
+    }
+
+    // Check if already checked in
+    if (reg.checked_in_at) {
+      return {
+        valid: true,
+        alreadyCheckedIn: true,
+        checkedInAt: reg.checked_in_at,
+        attendee: reg.full_name,
+        email: reg.email,
+        phone: reg.user_phone,
+        event: reg.event_title,
+        eventId: reg.event_id,
+        registrationId: reg.id,
+        ticketCode: `#${reg.qr_code_hash.substring(0, 8).toUpperCase()}`,
+        message: 'This Registration Has Already Been Checked In.',
+      };
+    }
+
+    // Atomic update to mark attendance and prevent duplicate concurrent check-ins
+    const updateRes = await query(
+      `UPDATE event_registrations
+       SET checked_in_at = NOW(),
+           checked_in_by = $2,
+           status = 'attended',
+           qr_status = 'USED',
+           updated_at = NOW()
+       WHERE id = $1 AND checked_in_at IS NULL
+       RETURNING *`,
+      [reg.id, checkedByUserId || null]
+    );
+
+    if (updateRes.rowCount && updateRes.rowCount > 0) {
+      const updated = updateRes.rows[0];
+      return {
+        valid: true,
+        alreadyCheckedIn: false,
+        checkedInAt: updated.checked_in_at,
+        attendee: reg.full_name,
+        email: reg.email,
+        phone: reg.user_phone,
+        event: reg.event_title,
+        eventId: reg.event_id,
+        registrationId: reg.id,
+        ticketCode: `#${reg.qr_code_hash.substring(0, 8).toUpperCase()}`,
+        personalInfo: reg.personal_info,
+        accessibilityNeeds: reg.accessibility_needs,
+        message: 'Registration Verified – Attendance Marked Successfully.',
+      };
+    } else {
+      const freshRes = await query(`SELECT checked_in_at FROM event_registrations WHERE id = $1`, [reg.id]);
+      return {
+        valid: true,
+        alreadyCheckedIn: true,
+        checkedInAt: freshRes.rows[0]?.checked_in_at || new Date(),
+        attendee: reg.full_name,
+        email: reg.email,
+        phone: reg.user_phone,
+        event: reg.event_title,
+        eventId: reg.event_id,
+        registrationId: reg.id,
+        ticketCode: `#${reg.qr_code_hash.substring(0, 8).toUpperCase()}`,
+        message: 'This Registration Has Already Been Checked In.',
+      };
+    }
+  }
+
+  static async getEventAttendance(eventId: string, orgId?: string) {
+    const eventRes = await query(
+      `SELECT id, title, event_date, start_time, venue_name, total_capacity, registered_count, org_id
+       FROM events WHERE id = $1`,
+      [eventId]
+    );
+    if (!eventRes.rows[0]) {
+      const err: any = new Error('Event not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    const ev = eventRes.rows[0];
+
+    const statsRes = await query(
+      `SELECT
+         COUNT(*) FILTER (WHERE status != 'cancelled') as total_registrations,
+         COUNT(*) FILTER (WHERE checked_in_at IS NOT NULL) as checked_in_count,
+         COUNT(*) FILTER (WHERE checked_in_at IS NULL AND status != 'cancelled') as pending_count
+       FROM event_registrations
+       WHERE event_id = $1`,
+      [eventId]
+    );
+
+    const stats = statsRes.rows[0] || {};
+    const totalRegistrations = parseInt(stats.total_registrations || '0', 10);
+    const checkedInCount = parseInt(stats.checked_in_count || '0', 10);
+    const pendingCount = parseInt(stats.pending_count || '0', 10);
+    const capacity = parseInt(ev.total_capacity || '100', 10);
+    const attendanceRate = totalRegistrations > 0
+      ? Math.min(100, Math.round((checkedInCount / totalRegistrations) * 100))
+      : 0;
+
+    const attendeesRes = await query(
+      `SELECT r.id, r.event_id, r.user_id, r.status, r.qr_code_hash, r.qr_status, r.checked_in_at, r.checked_in_by,
+              r.personal_info, r.accessibility_needs, r.consent_given, r.created_at,
+              u.full_name, u.email, u.phone, u.avatar_url
+       FROM event_registrations r
+       JOIN users u ON r.user_id = u.id
+       WHERE r.event_id = $1
+       ORDER BY r.checked_in_at DESC NULLS LAST, r.created_at DESC`,
+      [eventId]
+    );
+
+    const attendees = attendeesRes.rows.map((row) => ({
+      id: row.id,
+      registrationId: row.id,
+      eventId: row.event_id,
+      userId: row.user_id,
+      name: row.full_name || (row.personal_info?.fullName || 'Delegate'),
+      email: row.email || row.personal_info?.email,
+      phone: row.phone || row.personal_info?.phone,
+      avatarUrl: row.avatar_url,
+      status: row.status,
+      qrCodeHash: row.qr_code_hash,
+      ticketCode: `#${row.qr_code_hash.substring(0, 8).toUpperCase()}`,
+      checkedIn: !!row.checked_in_at,
+      checkedInAt: row.checked_in_at,
+      accessibilityNeeds: row.accessibility_needs,
+      createdAt: row.created_at,
+    }));
+
+    return {
+      eventId: ev.id,
+      eventTitle: ev.title,
+      eventDate: ev.event_date,
+      venueName: ev.venue_name,
+      capacity,
+      totalRegistrations,
+      checkedInCount,
+      pendingCount,
+      remainingCount: Math.max(0, totalRegistrations - checkedInCount),
+      attendanceRate,
+      attendees,
+    };
   }
 
   static async checkInById(id: string) {
