@@ -35,7 +35,7 @@ export class JobController {
 
   static async updateJob(req: Request, res: Response) {
     try {
-      const updated = await JobService.updateJob(req.params.id, req.body);
+      const updated = await JobService.updateJob(req.params.id, req.body, req.user?.id);
       return ApiResponse.success(res, updated, 'Job updated');
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);

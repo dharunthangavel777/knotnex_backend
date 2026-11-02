@@ -35,7 +35,7 @@ export class SchemeController {
 
   static async updateScheme(req: Request, res: Response) {
     try {
-      const updated = await SchemeService.updateScheme(req.params.id, req.body);
+      const updated = await SchemeService.updateScheme(req.params.id, req.body, req.user?.id);
       return ApiResponse.success(res, updated, 'Scheme updated');
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);

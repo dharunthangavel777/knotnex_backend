@@ -35,7 +35,7 @@ export class EventController {
 
   static async updateEvent(req: Request, res: Response) {
     try {
-      const updated = await EventService.updateEvent(req.params.id, req.body);
+      const updated = await EventService.updateEvent(req.params.id, req.body, req.user?.id);
       return ApiResponse.success(res, updated, 'Event updated');
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);

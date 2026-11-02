@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AdminService } from '../services/admin.service';
 import { UserService } from '../services/user.service';
 import { ApiResponse } from '../utils/response.util';
+import { ContentRevisionService } from '../services/content_revision.service';
 
 export class AdminController {
   static async listAllUsers(req: Request, res: Response) {
@@ -219,6 +220,35 @@ export class AdminController {
       return ApiResponse.success(res, logs);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async listPendingRevisions(req: Request, res: Response) {
+    try {
+      const result = await ContentRevisionService.listPendingRevisions();
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async approveRevision(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await ContentRevisionService.approveRevision(req.params.id, adminUserId);
+      return ApiResponse.success(res, result, 'Revision approved and live content updated successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async rejectRevision(req: Request, res: Response) {
+    try {
+      const adminUserId = (req as any).user?.id || 'admin';
+      const result = await ContentRevisionService.rejectRevision(req.params.id, adminUserId, req.body.reason);
+      return ApiResponse.success(res, result, 'Revision rejected and organization notified');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
     }
   }
 

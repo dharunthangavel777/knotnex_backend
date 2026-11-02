@@ -40,6 +40,11 @@ router.post('/schemes/:id/verify', AdminController.verifyScheme);
 router.post('/schemes/:id/approve', AdminController.verifyScheme);
 router.post('/schemes/:id/reject', AdminController.rejectScheme);
 
+// Content Revisions & Updates Workflow
+router.get('/revisions/pending', AdminController.listPendingRevisions);
+router.post('/revisions/:id/approve', AdminController.approveRevision);
+router.post('/revisions/:id/reject', AdminController.rejectRevision);
+
 router.get('/troubleshooting/deep-link', AdminController.getTroubleshootingDeepLink);
 
 router.get('/audit-logs', AdminController.getAuditLogs);

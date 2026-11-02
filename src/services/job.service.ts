@@ -2,6 +2,7 @@ import { query } from '../config/database';
 import { config } from '../config';
 import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
 import { JobStatus } from '../types/enums';
+import { ContentRevisionService } from './content_revision.service';
 
 export const inMemoryJobs: any[] = [];
 
@@ -51,6 +52,9 @@ export function formatJobResponse(row: any) {
     recruiter_info: recruiterInfo,
     application_form_config: appFormConfig,
     faqs,
+    has_pending_revision: Boolean(row.has_pending_revision),
+    current_version: row.current_version || 1,
+    rejection_reason: row.rejection_reason || null,
 
     // Flutter JobModel & Admin JobModel Direct Parity Fields
     companyName: row.org_name || 'KnotNex Partner',
@@ -211,13 +215,13 @@ export class JobService {
       }
       const targetOrgId = params.orgId || (params as any).org_id;
       if (params.status) {
-        conditions.push(`j.status = ${idx++}`);
+        conditions.push(`j.status = $${idx++}`);
         values.push(params.status);
       } else if (!targetOrgId) {
-        conditions.push(`j.status = 'open'`);
+        conditions.push(`(j.is_verified = true AND j.status = 'open')`);
       }
       if (targetOrgId) {
-        conditions.push(`j.org_id = ${idx++}`);
+        conditions.push(`j.org_id = $${idx++}`);
         values.push(targetOrgId);
       }
       if (params.search) {
@@ -282,12 +286,26 @@ export class JobService {
     }
   }
 
-  static async updateJob(id: string, data: any) {
+  static async updateJob(id: string, data: any, userId?: string) {
+    const existing = await this.getJobById(id);
+    if (!existing) throw new Error('Job not found');
+
+    // If job is already approved/published, creating an edit creates a revision for admin review
+    if (existing.is_verified && existing.status !== 'rejected') {
+      const revision = await ContentRevisionService.createRevision('job', id, existing.org_id, data, userId);
+      return {
+        ...existing,
+        has_pending_revision: true,
+        pending_revision_id: revision.id,
+        message: 'Job updates submitted for Admin re-verification. Existing version remains live.',
+      };
+    }
+
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
     if (!isUuid) {
       const job = inMemoryJobs.find((j: any) => String(j.id) === String(id));
       if (job) {
-        Object.assign(job, data, { updated_at: new Date().toISOString() });
+        Object.assign(job, data, { status: 'pending_verification', is_verified: false, updated_at: new Date().toISOString() });
         return formatJobResponse(job);
       }
       return null;
@@ -318,8 +336,9 @@ export class JobService {
       }
     }
 
-    if (fields.length === 0) return this.getJobById(id);
-
+    fields.push(`status = 'pending_verification'`);
+    fields.push(`is_verified = false`);
+    fields.push(`rejection_reason = NULL`);
     fields.push('updated_at = NOW()');
 
     try {
@@ -333,7 +352,7 @@ export class JobService {
       if (config.env === 'development' || !config.isProduction) {
         const job = inMemoryJobs.find((j: any) => String(j.id) === String(id));
         if (job) {
-          Object.assign(job, data, { updated_at: new Date().toISOString() });
+          Object.assign(job, data, { status: 'pending_verification', is_verified: false, updated_at: new Date().toISOString() });
           return formatJobResponse(job);
         }
       }

@@ -3,6 +3,7 @@ import { generateSlug } from '../utils/slug.util';
 import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
 import { EventStatus } from '../types/enums';
 import { config } from '../config';
+import { ContentRevisionService } from './content_revision.service';
 
 export const inMemoryEvents: any[] = [];
 
@@ -117,6 +118,7 @@ export class EventService {
     status?: string;
     search?: string;
     orgId?: string;
+    org_id?: string;
   }) {
     const { page, limit, offset } = getPagination(params);
 
@@ -124,6 +126,11 @@ export class EventService {
     const values: any[] = [];
     let idx = 1;
 
+    const targetOrgId = params.orgId || (params as any).org_id;
+    if (targetOrgId) {
+      conditions.push(`e.org_id = $${idx++}`);
+      values.push(targetOrgId);
+    }
     if (params.category) {
       conditions.push(`e.category ILIKE $${idx++}`);
       values.push(params.category);
@@ -135,6 +142,8 @@ export class EventService {
     if (params.status) {
       conditions.push(`e.status = $${idx++}`);
       values.push(params.status);
+    } else if (!targetOrgId) {
+      conditions.push(`(e.is_verified = true AND e.status IN ('published', 'upcoming', 'ongoing'))`);
     }
     if (params.search) {
       conditions.push(`(e.title ILIKE $${idx} OR e.short_description ILIKE $${idx} OR e.venue_name ILIKE $${idx})`);
@@ -145,7 +154,7 @@ export class EventService {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     try {
-      const countRes = await query(`SELECT COUNT(*) FROM events ${whereClause}`, values);
+      const countRes = await query(`SELECT COUNT(*) FROM events e ${whereClause}`, values);
       const total = parseInt(countRes.rows[0].count, 10);
 
       const eventsRes = await query(
@@ -162,13 +171,13 @@ export class EventService {
     } catch (err: any) {
       if (config.env === 'development' || !config.isProduction) {
         let filtered = [...inMemoryEvents];
-        if (params.orgId) {
-          filtered = filtered.filter(e => e.org_id === params.orgId);
+        if (targetOrgId) {
+          filtered = filtered.filter(e => e.org_id === targetOrgId);
         }
         if (params.status) {
           filtered = filtered.filter(e => e.status === params.status);
-        } else if (!params.orgId) {
-          filtered = filtered.filter(e => ['published', 'upcoming', 'ongoing'].includes(e.status));
+        } else if (!targetOrgId) {
+          filtered = filtered.filter(e => e.is_verified && ['published', 'upcoming', 'ongoing'].includes(e.status));
         }
         return buildPaginatedResult(filtered, filtered.length, page, limit);
       }
@@ -194,7 +203,21 @@ export class EventService {
     }
   }
 
-  static async updateEvent(id: string, data: any) {
+  static async updateEvent(id: string, data: any, userId?: string) {
+    const existing = await this.getEventById(id);
+    if (!existing) throw new Error('Event not found');
+
+    // If event is already approved/published, creating an edit creates a revision for admin review
+    if (existing.is_verified && existing.status !== 'rejected') {
+      const revision = await ContentRevisionService.createRevision('event', id, existing.org_id, data, userId);
+      return {
+        ...existing,
+        has_pending_revision: true,
+        pending_revision_id: revision.id,
+        message: 'Event updates submitted for Admin re-verification. Existing version remains live.',
+      };
+    }
+
     if (data.name && !data.title) data.title = data.name;
     if (data.poster && !data.coverUrl) data.coverUrl = data.poster;
     if (data.date && !data.eventDate) data.eventDate = data.date;
@@ -226,8 +249,10 @@ export class EventService {
       }
     }
 
-    if (fields.length === 0) return this.getEventById(id);
-
+    // Reset status to pending_verification and clear rejection_reason when re-submitting
+    fields.push(`status = 'pending_verification'`);
+    fields.push(`is_verified = false`);
+    fields.push(`rejection_reason = NULL`);
     fields.push('updated_at = NOW()');
 
     try {
@@ -241,7 +266,7 @@ export class EventService {
       if (config.env === 'development' || !config.isProduction) {
         const ev = inMemoryEvents.find((e: any) => String(e.id) === String(id));
         if (ev) {
-          Object.assign(ev, data, { updated_at: new Date().toISOString() });
+          Object.assign(ev, data, { status: 'pending_verification', is_verified: false, updated_at: new Date().toISOString() });
           return ev;
         }
       }

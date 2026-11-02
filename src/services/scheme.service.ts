@@ -3,6 +3,7 @@ import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
 import { SchemeStatus } from '../types/enums';
 import { config } from '../config';
 import { logger } from '../config/logger';
+import { ContentRevisionService } from './content_revision.service';
 
 // In-memory fallback for local dev when PostgreSQL is offline
 export const inMemorySchemes: any[] = [];
@@ -60,6 +61,9 @@ export function formatSchemeResponse(row: any) {
     supportEmail: row.support_email || 'support@schemes.gov.in',
     supportPhone: row.support_phone || '1800-111-555',
     isVerified: Boolean(row.is_verified),
+    has_pending_revision: Boolean(row.has_pending_revision),
+    current_version: row.current_version || 1,
+    rejection_reason: row.rejection_reason || null,
     badge: (row.status || 'ACTIVE').toUpperCase(),
   };
 }
@@ -204,7 +208,7 @@ export class SchemeService {
       conditions.push(`s.status = $${idx++}`);
       values.push(params.status);
     } else if (!targetOrgId) {
-      conditions.push(`s.status = 'active'`);
+      conditions.push(`(s.is_verified = true AND s.status = 'active')`);
     }
     if (params.search) {
       conditions.push(`(s.title ILIKE $${idx} OR s.description ILIKE $${idx} OR s.provider_name ILIKE $${idx})`);
@@ -270,12 +274,26 @@ export class SchemeService {
     }
   }
 
-  static async updateScheme(id: string, data: any) {
+  static async updateScheme(id: string, data: any, userId?: string) {
+    const existing = await this.getSchemeById(id);
+    if (!existing) throw new Error('Scheme not found');
+
+    // If scheme is already approved/published, creating an edit creates a revision for admin review
+    if (existing.is_verified && existing.status !== 'rejected') {
+      const revision = await ContentRevisionService.createRevision('scheme', id, existing.org_id, data, userId);
+      return {
+        ...existing,
+        has_pending_revision: true,
+        pending_revision_id: revision.id,
+        message: 'Scheme updates submitted for Admin re-verification. Existing version remains active.',
+      };
+    }
+
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id || '');
     if (!isUuid) {
       const sIdx = inMemorySchemes.findIndex(s => String(s.id) === String(id));
       if (sIdx !== -1) {
-        inMemorySchemes[sIdx] = { ...inMemorySchemes[sIdx], ...data, updated_at: new Date().toISOString() };
+        inMemorySchemes[sIdx] = { ...inMemorySchemes[sIdx], ...data, status: 'pending_verification', is_verified: false, updated_at: new Date().toISOString() };
         return formatSchemeResponse(inMemorySchemes[sIdx]);
       }
       return null;
@@ -307,8 +325,9 @@ export class SchemeService {
       }
     }
 
-    if (fields.length === 0) return this.getSchemeById(id);
-
+    fields.push(`status = 'pending_verification'`);
+    fields.push(`is_verified = false`);
+    fields.push(`rejection_reason = NULL`);
     fields.push('updated_at = NOW()');
 
     try {
@@ -321,7 +340,7 @@ export class SchemeService {
       if (config.env === 'development' || !config.isProduction) {
         const sIdx = inMemorySchemes.findIndex(s => s.id === id);
         if (sIdx !== -1) {
-          inMemorySchemes[sIdx] = { ...inMemorySchemes[sIdx], ...data, updated_at: new Date().toISOString() };
+          inMemorySchemes[sIdx] = { ...inMemorySchemes[sIdx], ...data, status: 'pending_verification', is_verified: false, updated_at: new Date().toISOString() };
           return formatSchemeResponse(inMemorySchemes[sIdx]);
         }
       }
