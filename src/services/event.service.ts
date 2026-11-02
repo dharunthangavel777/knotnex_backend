@@ -259,6 +259,8 @@ export class EventService {
     search?: string;
     orgId?: string;
     org_id?: string;
+    org_id?: string;
+    orgId?: sg;f5518
   }) {
     const { page, limit, offset } = getPagination(params);
     const conditions: string[] = [];
@@ -296,6 +298,11 @@ export class EventService {
       }
     }
 
+    const targetOrgId = params.orgId || params.org_id;
+    if (targetOrgId) {
+      conditions.push(`e.org_id = $${idx++}`);
+      values.push(targetOrgId);
+    }
     if (params.search) {
       conditions.push(`(e.title ILIKE $${idx} OR e.short_description ILIKE $${idx} OR e.venue_name ILIKE $${idx})`);
       values.push(`%${params.search}%`);
@@ -397,6 +404,45 @@ export class EventService {
     let capacity = data.capacity !== undefined ? (typeof data.capacity === 'number' ? data.capacity : parseInt(String(data.capacity), 10) || null) : undefined;
     let ticketPrice = data.ticketPrice !== undefined ? (typeof data.ticketPrice === 'number' ? data.ticketPrice : parseFloat(String(data.ticketPrice).replace(/[^0-9.]/g, '')) || 0) : undefined;
     let isFree = data.isFree !== undefined ? Boolean(data.isFree) : (ticketPrice !== undefined ? ticketPrice === 0 : undefined);
+
+    // Sanitize eventDate if it has time component or bullet
+    if (eventDate) {
+      if (typeof eventDate === 'string' && eventDate.includes('•')) {
+        const parts = eventDate.split('•').map((s: string) => s.trim());
+        eventDate = parts[0];
+        if (parts[1] && !startTime) startTime = parts[1];
+      }
+      try {
+        const d = new Date(eventDate);
+        if (!isNaN(d.getTime())) {
+          eventDate = d.toISOString().split('T')[0];
+        }
+      } catch {}
+    }
+
+    if (startTime && typeof startTime === 'string') {
+      const match = startTime.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
+     if (match) startTime = match[1];
+    }
+
+    // Sanitize status to database check constraint
+    let status = data.status;
+    if (status) {
+      const s = String(status).toLowerCase();
+      if (['pendingapproval', 'pending_approval', 'pending', 'pending_verification'].includes(s)) {
+        status = 'draft';
+      } else if (['active', 'approved', 'published', 'verified & live', 'verified'].includes(s)) {
+        status = 'published';
+      } else if (['rejected', 'inactive', 'cancelled'].includes(s)) {
+        status = 'cancelled';
+      } else if (['completed'].includes(s)) {
+        status = 'completed';
+      } else if (['ongoing'].includes(s)) {
+        status = 'ongoing';
+      } else if (['upcoming'].includes(s)) {
+        status = 'upcoming';
+      }
+    }
 
     // Sanitize eventDate if it has time component or bullet
     if (eventDate) {

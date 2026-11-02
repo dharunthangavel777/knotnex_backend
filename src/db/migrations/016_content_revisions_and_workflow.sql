@@ -40,3 +40,4 @@ CREATE TABLE IF NOT EXISTS content_revisions (
 CREATE INDEX IF NOT EXISTS idx_content_revisions_entity ON content_revisions(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_content_revisions_status ON content_revisions(status);
 CREATE INDEX IF NOT EXISTS idx_content_revisions_org ON content_revisions(org_id);
+

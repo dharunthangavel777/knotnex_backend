@@ -78,3 +78,4 @@ describe('Content Revisions & Edit/Re-approval Lifecycle Integration Test', () =
     assert.strictEqual(approved.status, 'APPROVED');
   });
 });
+
