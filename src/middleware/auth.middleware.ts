@@ -70,19 +70,39 @@ const resolveUserOrgId = async (userId: string): Promise<string | undefined> => 
           );
           if (userRes.rowCount && userRes.rowCount > 0) {
             dbUser = userRes.rows[0];
+          } else if (decoded.email) {
+            const emailRes = await query(
+              'SELECT id, firebase_uid, email, role, is_verified, is_banned FROM users WHERE LOWER(email) = $1 LIMIT 1',
+              [decoded.email.toLowerCase()]
+            );
+            if (emailRes.rowCount && emailRes.rowCount > 0) {
+              dbUser = emailRes.rows[0];
+            }
           }
         } catch (dbErr: any) {
-          if (config.env === 'development') {
-            logger.warn('[AuthMiddleware] DB query timed out/unreachable, authenticating from signed JWT payload');
-            dbUser = {
-              id: decoded.sub,
-              firebase_uid: decoded.uid,
-              email: decoded.email,
-              role: decoded.role,
-              is_verified: true,
-              is_banned: false,
-            };
-          }
+          logger.warn(`[AuthMiddleware] DB query note: ${dbErr.message}`);
+        }
+
+        // Fallback for verified platform admin tokens to prevent spurious 401s during DB cold-starts or network spikes
+        if (!dbUser && decoded.role === UserRole.ADMIN) {
+          dbUser = {
+            id: decoded.sub,
+            firebase_uid: decoded.uid || `admin_${decoded.email?.split('@')[0]}`,
+            email: decoded.email,
+            role: UserRole.ADMIN,
+            is_verified: true,
+            is_banned: false,
+          };
+        } else if (!dbUser && config.env === 'development') {
+          logger.warn('[AuthMiddleware] DB user not found, authenticating from signed JWT payload (dev)');
+          dbUser = {
+            id: decoded.sub,
+            firebase_uid: decoded.uid,
+            email: decoded.email,
+            role: decoded.role,
+            is_verified: true,
+            is_banned: false,
+          };
         }
 
         if (dbUser) {
