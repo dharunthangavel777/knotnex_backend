@@ -2,34 +2,119 @@ import { firestore } from '../config/firebase';
 import { COLLECTIONS } from '../config/firestore';
 import { MessageType } from '../types/enums';
 import { NotificationService } from './notification.service';
+import { query } from '../config/database';
+import { logger } from '../config/logger';
+import { getSocketIO } from '../websockets/socket.server';
 
 export class ChatService {
   static async listUserConversations(userId: string) {
-    const snapshot = await firestore
-      .collection(COLLECTIONS.CONVERSATIONS)
-      .where('participants', 'array-contains', userId)
-      .orderBy('lastMessageAt', 'desc')
-      .get();
+    try {
+      const snapshot = await firestore
+        .collection(COLLECTIONS.CONVERSATIONS)
+        .where('participants', 'array-contains', userId)
+        .orderBy('lastMessageAt', 'desc')
+        .get();
 
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+      const rawList = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Collect other participant IDs
+      const otherUserIds = Array.from(new Set(
+        rawList.map((c: any) => {
+          const parts = (c.participants || []) as string[];
+          return parts.find((p) => p !== userId);
+        }).filter(Boolean) as string[]
+      ));
+
+      const userMap = new Map<string, any>();
+      if (otherUserIds.length > 0) {
+        try {
+          const userRes = await query(
+            `SELECT u.id, u.full_name, u.email, u.avatar_url, u.role, u.username,
+                    org.name as registered_org_name, org.logo_url as organization_logo
+             FROM users u
+             LEFT JOIN organizations org ON org.owner_id = u.id
+             WHERE u.id = ANY($1)`,
+            [otherUserIds]
+          );
+          for (const row of userRes.rows) {
+            userMap.set(row.id, {
+              id: row.id,
+              name: row.registered_org_name || row.full_name || 'User',
+              email: row.email,
+              avatar_url: row.organization_logo || row.avatar_url || '',
+              role: row.role,
+              username: row.username,
+              is_online: true,
+              is_verified: true,
+            });
+          }
+        } catch (e: any) {
+          logger.warn('[ChatService.listUserConversations] user enrichment warning: ' + e.message);
+        }
+      }
+
+      return rawList.map((conv: any) => {
+        const parts = (conv.participants || []) as string[];
+        const otherId = parts.find((p) => p !== userId) || '';
+        const otherUser = userMap.get(otherId) || {
+          id: otherId,
+          name: 'User',
+          email: '',
+          avatar_url: '',
+          role: 'user',
+          is_online: false,
+          is_verified: true,
+        };
+        return {
+          ...conv,
+          other_user: otherUser,
+          participant: otherUser,
+        };
+      });
+    } catch (err: any) {
+      logger.error('[ChatService.listUserConversations] error: ' + err.message);
+      return [];
+    }
   }
 
   static async getConversationMessages(conversationId: string, limit: number = 50) {
-    const snapshot = await firestore
-      .collection(COLLECTIONS.CONVERSATIONS)
-      .doc(conversationId)
-      .collection(COLLECTIONS.MESSAGES)
-      .orderBy('timestamp', 'desc')
-      .limit(limit)
-      .get();
+    try {
+      const snapshot = await firestore
+        .collection(COLLECTIONS.CONVERSATIONS)
+        .doc(conversationId)
+        .collection(COLLECTIONS.MESSAGES)
+        .orderBy('timestamp', 'desc')
+        .limit(limit)
+        .get();
 
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })).reverse();
+      return snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })).reverse();
+    } catch (err: any) {
+      logger.error('[ChatService.getConversationMessages] error: ' + err.message);
+      return [];
+    }
+  }
+
+  static async getConversationOrDirectMessages(currentUserId: string, targetId: string, limit: number = 50) {
+    try {
+      // 1. Try treating targetId as a direct conversation ID
+      const directDoc = await firestore.collection(COLLECTIONS.CONVERSATIONS).doc(targetId).get();
+      if (directDoc.exists) {
+        return this.getConversationMessages(targetId, limit);
+      }
+
+      // 2. Treat targetId as the other participant's user ID
+      const conv = await this.startConversation(currentUserId, targetId);
+      return this.getConversationMessages(conv.id, limit);
+    } catch (err: any) {
+      logger.error('[ChatService.getConversationOrDirectMessages] error: ' + err.message);
+      return [];
+    }
   }
 
   static async startConversation(creatorId: string, participantId: string) {
@@ -68,6 +153,7 @@ export class ChatService {
   static async sendMessage(data: {
     conversationId: string;
     senderId: string;
+    recipientId?: string;
     content: string;
     messageType?: MessageType;
     mediaUrl?: string;
@@ -79,6 +165,7 @@ export class ChatService {
 
     const messageData = {
       senderId: data.senderId,
+      receiverId: data.recipientId || null,
       content: data.content,
       messageType: data.messageType || MessageType.TEXT,
       mediaUrl: data.mediaUrl || null,
@@ -97,12 +184,26 @@ export class ChatService {
       lastMessageBy: data.senderId,
     }, { merge: true });
 
-    // Send notification to other participant
+    const messagePayload = { id: msgRef.id, conversationId: data.conversationId, ...messageData };
+
+    // Real-time broadcast via Socket.IO
+    const io = getSocketIO();
+    if (io) {
+      io.to(`conversation_${data.conversationId}`).emit('new_message', messagePayload);
+      if (data.recipientId) {
+        io.to(`user:${data.recipientId}`).emit('new_message', messagePayload);
+      }
+    }
+
+    // Send push notification to other participant
     convRef.get().then(doc => {
       if (doc.exists) {
         const parts = (doc.data()?.participants as string[]) || [];
-        const recipientId = parts.find(p => p !== data.senderId);
+        const recipientId = data.recipientId || parts.find(p => p !== data.senderId);
         if (recipientId) {
+          if (io && !data.recipientId) {
+            io.to(`user:${recipientId}`).emit('new_message', messagePayload);
+          }
           NotificationService.createNotification(
             recipientId,
             data.senderId,
@@ -115,7 +216,7 @@ export class ChatService {
       }
     }).catch(() => {});
 
-    return { id: msgRef.id, ...messageData };
+    return messagePayload;
   }
 
   static async markMessageRead(conversationId: string, messageId: string) {

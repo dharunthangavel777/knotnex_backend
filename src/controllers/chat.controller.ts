@@ -14,7 +14,9 @@ export class ChatController {
 
   static async getMessages(req: Request, res: Response) {
     try {
-      const messages = await ChatService.getConversationMessages(req.params.id);
+      const currentUserId = req.user!.id;
+      const targetId = req.params.id;
+      const messages = await ChatService.getConversationOrDirectMessages(currentUserId, targetId);
       return ApiResponse.success(res, messages);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);
@@ -23,7 +25,11 @@ export class ChatController {
 
   static async startConversation(req: Request, res: Response) {
     try {
-      const conversation = await ChatService.startConversation(req.user!.id, req.body.participantId);
+      const participantId = req.body.participantId || req.body.receiverId;
+      if (!participantId) {
+        return ApiResponse.error(res, 'participantId or receiverId is required', 400);
+      }
+      const conversation = await ChatService.startConversation(req.user!.id, participantId);
       return ApiResponse.created(res, conversation);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);
@@ -32,10 +38,24 @@ export class ChatController {
 
   static async sendMessage(req: Request, res: Response) {
     try {
+      const currentUserId = req.user!.id;
+      let conversationId = req.body.conversationId;
+      const recipientId = req.body.receiverId || req.body.recipientId;
+
+      if (!conversationId && recipientId) {
+        const conv = await ChatService.startConversation(currentUserId, recipientId);
+        conversationId = conv.id;
+      }
+
+      if (!conversationId) {
+        return ApiResponse.error(res, 'Either conversationId or receiverId is required', 400);
+      }
+
       const message = await ChatService.sendMessage({
-        conversationId: req.body.conversationId,
-        senderId: req.user!.id,
-        content: req.body.content,
+        conversationId,
+        senderId: currentUserId,
+        recipientId,
+        content: req.body.content || '',
         messageType: req.body.messageType,
         mediaUrl: req.body.mediaUrl,
         replyTo: req.body.replyTo,

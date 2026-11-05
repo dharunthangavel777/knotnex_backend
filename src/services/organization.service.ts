@@ -200,7 +200,25 @@ export class OrganizationService {
       values
     );
 
-    return res.rows[0];
+    const updatedOrg = res.rows[0];
+    if (updatedOrg && updatedOrg.owner_id) {
+      const syncFields: string[] = [];
+      const syncValues: any[] = [updatedOrg.owner_id];
+      let sIdx = 2;
+      if (updatedOrg.logo_url !== undefined && (normalizedData.logo_url !== undefined || normalizedData.logoUrl !== undefined)) {
+        syncFields.push(`avatar_url = ${sIdx++}`);
+        syncValues.push(updatedOrg.logo_url);
+      }
+      if (updatedOrg.slug !== undefined && normalizedData.slug !== undefined) {
+        syncFields.push(`username = ${sIdx++}`);
+        syncValues.push(updatedOrg.slug);
+      }
+      if (syncFields.length > 0) {
+        syncFields.push('updated_at = NOW()');
+        await query(`UPDATE users SET ${syncFields.join(', ')} WHERE id = $1`, syncValues).catch(() => {});
+      }
+    }
+    return updatedOrg;
   }
 
   static async followOrg(orgId: string, userId: string) {

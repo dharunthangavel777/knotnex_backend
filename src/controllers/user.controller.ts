@@ -3,6 +3,17 @@ import { UserService } from '../services/user.service';
 import { ApiResponse } from '../utils/response.util';
 
 export class UserController {
+  static async checkUsernameAvailability(req: Request, res: Response) {
+    try {
+      const username = (req.query.username as string) || '';
+      const excludeUserId = (req.query.excludeUserId as string) || req.user?.id;
+      const result = await UserService.checkUsernameAvailability(username, excludeUserId);
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
   static async listUsers(req: Request, res: Response) {
     try {
       const result = await UserService.listUsers(req.query);

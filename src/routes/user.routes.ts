@@ -6,6 +6,7 @@ import { requireAdmin } from '../middleware/role.middleware';
 const router = Router();
 
 router.get('/', authenticate, UserController.listUsers);
+router.get('/check-username', optionalAuthenticate, UserController.checkUsernameAvailability);
 router.get('/profile', authenticate, UserController.getProfile);
 router.put('/profile', authenticate, UserController.updateProfile);
 router.patch('/profile', authenticate, UserController.updateProfile);

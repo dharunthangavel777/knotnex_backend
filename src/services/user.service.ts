@@ -35,6 +35,48 @@ export const inMemoryUsers: InMemoryUser[] = [];
 
 
 export class UserService {
+  static async checkUsernameAvailability(rawUsername: string, excludeUserId?: string) {
+    if (!rawUsername) {
+      return { available: false, message: 'User ID cannot be empty' };
+    }
+    const clean = rawUsername.trim().toLowerCase().replace(/^@+/, '').replace(/@knotnex$/i, '').trim();
+    if (clean.length < 3 || clean.length > 10) {
+      return { available: false, message: 'User ID prefix must be between 3 and 10 characters long' };
+    }
+    if (!/^[a-z0-9]+$/.test(clean)) {
+      return { available: false, message: 'User ID can only contain small letters (a-z) and numbers (0-9) without special characters' };
+    }
+    const reserved = ['admin', 'knotnex', 'support', 'help', 'official', 'root', 'moderator', 'system', 'api'];
+    if (reserved.includes(clean)) {
+      return { available: false, message: 'This User ID is reserved by KnotNex' };
+    }
+
+    try {
+      // Check in users table
+      const userRes = await query(
+        `SELECT id FROM users WHERE LOWER(username) = LOWER($1) ${excludeUserId ? 'AND id <> $2' : ''} LIMIT 1`,
+        excludeUserId ? [clean, excludeUserId] : [clean]
+      );
+      if (userRes.rows.length > 0) {
+        return { available: false, message: `User ID '${clean}@knotnex' is already taken` };
+      }
+
+      // Check in organizations table
+      const orgRes = await query(
+        `SELECT id FROM organizations WHERE LOWER(slug) = LOWER($1) ${excludeUserId ? 'AND owner_id <> $2' : ''} LIMIT 1`,
+        excludeUserId ? [clean, excludeUserId] : [clean]
+      );
+      if (orgRes.rows.length > 0) {
+        return { available: false, message: `User ID '${clean}@knotnex' is already in use by an organization` };
+      }
+
+      return { available: true, message: `User ID '${clean}@knotnex' is available`, cleanUsername: clean };
+    } catch (err: any) {
+      logger.warn('[UserService.checkUsernameAvailability] DB query fallback: ' + err.message);
+      return { available: true, message: `User ID '${clean}@knotnex' is available`, cleanUsername: clean };
+    }
+  }
+
   static async listUsers(params: { page?: any; limit?: any; role?: string; search?: string; status?: string }) {
     const { page, limit, offset } = getPagination(params);
 
@@ -232,9 +274,17 @@ export class UserService {
     const phone = data.phone;
     const avatarUrl = data.avatarUrl !== undefined ? data.avatarUrl : data.avatar_url;
     let username = data.username;
-    if (typeof username === 'string') {
-      username = username.trim().toLowerCase().replace(/^@+/, '').replace(/@knotnex$/i, '').trim();
-      if (username.length > 10) username = username.substring(0, 10);
+    let cleanUsername: string | null = null;
+    if (username !== undefined) {
+      if (typeof username === 'string' && username.trim().length > 0) {
+        const check = await UserService.checkUsernameAvailability(username, id);
+        if (!check.available) {
+          throw new Error(check.message);
+        }
+        cleanUsername = check.cleanUsername || username.trim().toLowerCase().replace(/^@+/, '').replace(/@knotnex$/i, '').trim();
+      } else {
+        cleanUsername = null;
+      }
     }
 
     const userFields: string[] = [];
@@ -254,8 +304,8 @@ export class UserService {
       userValues.push(avatarUrl === '' ? null : avatarUrl);
     }
     if (username !== undefined) {
-      userFields.push(`username = $${uIdx++}`);
-      userValues.push(username);
+      userFields.push(`username = ${uIdx++}`);
+      userValues.push(cleanUsername);
     }
 
     if (userFields.length > 0) {
@@ -264,6 +314,18 @@ export class UserService {
         `UPDATE users SET ${userFields.join(', ')} WHERE id = $1`,
         userValues
       );
+      if (avatarUrl) {
+        await query(
+          `UPDATE organizations SET logo_url = $1, updated_at = NOW() WHERE owner_id = $2`,
+          [avatarUrl, id]
+        ).catch(() => {});
+      }
+      if (cleanUsername) {
+        await query(
+          `UPDATE organizations SET slug = $1, updated_at = NOW() WHERE owner_id = $2`,
+          [cleanUsername, id]
+        ).catch(() => {});
+      }
     }
 
     // Update user_profiles
