@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { OrganizationService } from '../services/organization.service';
 import { AnalyticsService } from '../services/analytics.service';
 import { ApiResponse } from '../utils/response.util';
+import { query } from '../config/database';
 
 export class OrganizationController {
   static async createOrg(req: Request, res: Response) {
@@ -34,7 +35,35 @@ export class OrganizationController {
 
   static async updateOrg(req: Request, res: Response) {
     try {
-      const updated = await OrganizationService.updateOrg(req.params.id, req.body);
+      const orgId = req.params.id;
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+
+      // Ownership authorization check
+      if (userRole !== 'admin') {
+        const check = await query(`SELECT owner_id FROM organizations WHERE id = $1`, [orgId]);
+        const ownerId = check.rows[0]?.owner_id;
+        if (ownerId && ownerId !== userId) {
+          const member = await query(
+            `SELECT role_in_org FROM org_team_members WHERE org_id = $1 AND user_id = $2`,
+            [orgId, userId]
+          );
+          if (member.rows.length === 0) {
+            return ApiResponse.error(res, 'You do not have permission to edit this organization', 403, 'FORBIDDEN');
+          }
+        }
+      }
+
+      // Protect admin-only fields
+      const safeData = { ...req.body };
+      if (userRole !== 'admin') {
+        delete safeData.is_verified;
+        delete safeData.isVerified;
+        delete safeData.followers_count;
+        delete safeData.followersCount;
+      }
+
+      const updated = await OrganizationService.updateOrg(orgId, safeData);
       return ApiResponse.success(res, updated, 'Organization updated');
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);
@@ -199,4 +228,3 @@ export class OrganizationController {
     }
   }
 }
-

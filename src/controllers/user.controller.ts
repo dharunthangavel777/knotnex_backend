@@ -46,7 +46,15 @@ export class UserController {
 
   static async updateUser(req: Request, res: Response) {
     try {
-      const updated = await UserService.updateUser(req.params.id, req.body);
+      const targetUserId = req.params.id;
+      const currentUserId = req.user!.id;
+      const currentUserRole = req.user!.role;
+
+      if (targetUserId !== currentUserId && currentUserRole !== 'admin') {
+        return ApiResponse.error(res, 'You do not have permission to update this profile', 403, 'FORBIDDEN');
+      }
+
+      const updated = await UserService.updateUser(targetUserId, req.body);
       return ApiResponse.success(res, updated, 'User updated successfully');
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);
@@ -100,6 +108,14 @@ export class UserController {
 
   static async removeUserDevice(req: Request, res: Response) {
     try {
+      const targetUserId = req.params.id;
+      const currentUserId = req.user!.id;
+      const currentUserRole = req.user!.role;
+
+      if (targetUserId !== currentUserId && currentUserRole !== 'admin') {
+        return ApiResponse.error(res, 'You do not have permission to manage this device session', 403, 'FORBIDDEN');
+      }
+
       const result = await UserService.removeUserDevice(req.params.id, req.params.deviceId);
       return ApiResponse.success(res, result, 'Device session removed');
     } catch (error: any) {

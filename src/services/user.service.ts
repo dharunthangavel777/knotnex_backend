@@ -154,8 +154,9 @@ export class UserService {
   static async getUserById(id: string, currentUserId?: string) {
     try {
       const res = await query(
-        `SELECT u.id, u.firebase_uid, u.email, u.phone, u.full_name, u.avatar_url, u.role, u.is_verified, u.is_banned, u.category_selection_completed, u.created_at,
-                p.bio, p.district, p.state, p.skills, p.languages, p.disability_type,
+        `SELECT u.id, u.firebase_uid, u.email, u.phone, u.full_name, u.avatar_url, u.role, u.is_verified, u.is_banned, u.category_selection_completed, u.username, u.created_at,
+                p.bio, p.date_of_birth, p.gender, p.district, p.state, p.city, p.country, p.address, p.pincode,
+                p.disability_type, p.education, p.skills, p.interests, p.languages, p.social_links, p.accessibility, p.cover_url,
                 ovr.id as verification_request_id,
                 ovr.organization_name,
                 ovr.category as organization_category,
@@ -167,6 +168,25 @@ export class UserService {
                 org.id as organization_id,
                 org.name as registered_org_name,
                 org.type as organization_type,
+                org.logo_url as organization_logo,
+                org.cover_url as organization_cover,
+                org.about as organization_about,
+                org.mission as organization_mission,
+                org.vision as organization_vision,
+                org.services as organization_services,
+                org.gallery as organization_gallery,
+                org.contact_email as organization_contact_email,
+                org.contact_phone as organization_contact_phone,
+                org.website as organization_website_url,
+                org.social_links as organization_social_links,
+                org.slug as organization_slug,
+                org.registration_number as organization_registration_number,
+                org.established_year as organization_established_year,
+                org.address as organization_address,
+                org.city as organization_city,
+                org.district as organization_district,
+                org.state as organization_state,
+                org.is_verified as organization_is_verified,
                 (SELECT COUNT(*) FROM user_followers WHERE following_id = u.id) as followers_count,
                 (SELECT COUNT(*) FROM user_followers WHERE follower_id = u.id) as following_count,
                 (SELECT COUNT(*) FROM posts WHERE author_id = u.id AND is_moderated = false) as posts_count,
@@ -208,25 +228,30 @@ export class UserService {
   }
 
   static async updateUser(id: string, data: any) {
-    const fullName = data.fullName || data.full_name;
-    const avatarUrl = data.avatarUrl || data.avatar_url;
-    const disabilityType = data.disabilityType || data.disability_type;
+    const fullName = data.fullName !== undefined ? data.fullName : data.full_name;
+    const phone = data.phone;
+    const avatarUrl = data.avatarUrl !== undefined ? data.avatarUrl : data.avatar_url;
+    const username = data.username;
 
     const userFields: string[] = [];
     const userValues: any[] = [id];
     let uIdx = 2;
 
     if (fullName !== undefined) {
-      userFields.push(`full_name = $${uIdx++}`);
+      userFields.push(`full_name = ${uIdx++}`);
       userValues.push(fullName);
     }
-    if (data.phone !== undefined) {
-      userFields.push(`phone = $${uIdx++}`);
-      userValues.push(data.phone);
+    if (phone !== undefined) {
+      userFields.push(`phone = ${uIdx++}`);
+      userValues.push(phone);
     }
     if (avatarUrl !== undefined) {
-      userFields.push(`avatar_url = $${uIdx++}`);
-      userValues.push(avatarUrl);
+      userFields.push(`avatar_url = ${uIdx++}`);
+      userValues.push(avatarUrl === '' ? null : avatarUrl);
+    }
+    if (username !== undefined) {
+      userFields.push(`username = ${uIdx++}`);
+      userValues.push(username);
     }
 
     if (userFields.length > 0) {
@@ -242,25 +267,91 @@ export class UserService {
     const profileValues: any[] = [id];
     let pIdx = 2;
 
-    if (data.bio !== undefined) {
-      profileFields.push(`bio = $${pIdx++}`);
-      profileValues.push(data.bio);
+    const bio = data.bio;
+    const dateOfBirth = data.dateOfBirth !== undefined ? data.dateOfBirth : data.date_of_birth;
+    const gender = data.gender;
+    const district = data.district;
+    const state = data.state;
+    const city = data.city;
+    const country = data.country;
+    const address = data.address;
+    const pincode = data.pincode;
+    const disabilityType = data.disabilityType !== undefined ? data.disabilityType : data.disability_type;
+    const education = data.education;
+    const skills = data.skills;
+    const interests = data.interests;
+    const languages = data.languages;
+    const socialLinks = data.socialLinks !== undefined ? data.socialLinks : data.social_links;
+    const accessibility = data.accessibility;
+    const coverUrl = data.coverUrl !== undefined ? data.coverUrl : data.cover_url;
+
+    if (bio !== undefined) {
+      profileFields.push(`bio = ${pIdx++}`);
+      profileValues.push(bio);
     }
-    if (data.district !== undefined) {
-      profileFields.push(`district = $${pIdx++}`);
-      profileValues.push(data.district);
+    if (dateOfBirth !== undefined) {
+      profileFields.push(`date_of_birth = ${pIdx++}`);
+      profileValues.push(dateOfBirth || null);
     }
-    if (data.state !== undefined) {
-      profileFields.push(`state = $${pIdx++}`);
-      profileValues.push(data.state);
+    if (gender !== undefined) {
+      profileFields.push(`gender = ${pIdx++}`);
+      profileValues.push(gender);
     }
-    if (data.skills !== undefined) {
-      profileFields.push(`skills = $${pIdx++}`);
-      profileValues.push(data.skills);
+    if (district !== undefined) {
+      profileFields.push(`district = ${pIdx++}`);
+      profileValues.push(district);
+    }
+    if (state !== undefined) {
+      profileFields.push(`state = ${pIdx++}`);
+      profileValues.push(state);
+    }
+    if (city !== undefined) {
+      profileFields.push(`city = ${pIdx++}`);
+      profileValues.push(city);
+    }
+    if (country !== undefined) {
+      profileFields.push(`country = ${pIdx++}`);
+      profileValues.push(country);
+    }
+    if (address !== undefined) {
+      profileFields.push(`address = ${pIdx++}`);
+      profileValues.push(address);
+    }
+    if (pincode !== undefined) {
+      profileFields.push(`pincode = ${pIdx++}`);
+      profileValues.push(pincode);
     }
     if (disabilityType !== undefined) {
-      profileFields.push(`disability_type = $${pIdx++}`);
+      profileFields.push(`disability_type = ${pIdx++}`);
       profileValues.push(disabilityType);
+    }
+    if (education !== undefined) {
+      profileFields.push(`education = ${pIdx++}`);
+      profileValues.push(typeof education === 'string' ? education : JSON.stringify(education));
+    }
+    if (skills !== undefined) {
+      profileFields.push(`skills = ${pIdx++}`);
+      profileValues.push(skills);
+    }
+    if (interests !== undefined) {
+      profileFields.push(`interests = ${pIdx++}`);
+      profileValues.push(interests);
+    }
+    if (languages !== undefined) {
+      profileFields.push(`languages = ${pIdx++}`);
+      profileValues.push(languages);
+    }
+    if (socialLinks !== undefined) {
+      profileFields.push(`social_links = ${pIdx++}`);
+      profileValues.push(typeof socialLinks === 'string' ? socialLinks : JSON.stringify(socialLinks));
+    }
+    if (accessibility !== undefined) {
+      profileFields.push(`accessibility = ${pIdx++}`);
+      profileValues.push(typeof accessibility === 'string' ? accessibility : JSON.stringify(accessibility));
+    }
+    if (coverUrl !== undefined) {
+      profileFields.push(`cover_url = ${pIdx++}`);
+      profileValues.push(coverUrl === '' ? null : coverUrl);
     }
 
     if (profileFields.length > 0) {
@@ -268,6 +359,7 @@ export class UserService {
         `INSERT INTO user_profiles (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
         [id]
       );
+      profileFields.push(`updated_at = NOW()`);
       await query(
         `UPDATE user_profiles SET ${profileFields.join(', ')} WHERE user_id = $1`,
         profileValues

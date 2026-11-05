@@ -15,7 +15,15 @@ export class ProfileController {
 
   static async updateProfile(req: Request, res: Response) {
     try {
-      const updated = await ProfileService.updateProfile(req.params.userId, req.body);
+      const targetUserId = req.params.userId;
+      const currentUserId = req.user!.id;
+      const currentUserRole = req.user!.role;
+
+      if (targetUserId !== currentUserId && currentUserRole !== 'admin') {
+        return ApiResponse.error(res, 'You do not have permission to update this profile', 403, 'FORBIDDEN');
+      }
+
+      const updated = await ProfileService.updateProfile(targetUserId, req.body);
       return ApiResponse.success(res, updated, 'Profile updated successfully');
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);

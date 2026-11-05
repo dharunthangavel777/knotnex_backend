@@ -134,13 +134,54 @@ export class OrganizationService {
     const values: any[] = [id];
     let idx = 2;
 
-    const allowed = ['name', 'type', 'about', 'mission', 'vision', 'services', 'achievements', 'gallery', 'contact_email', 'contact_phone', 'website', 'logo_url', 'cover_url', 'social_links'];
-    
+    const allowed = [
+      'name',
+      'slug',
+      'type',
+      'about',
+      'mission',
+      'vision',
+      'services',
+      'achievements',
+      'gallery',
+      'contact_email',
+      'contact_phone',
+      'website',
+      'logo_url',
+      'cover_url',
+      'social_links',
+      'registration_number',
+      'established_year',
+      'address',
+      'city',
+      'district',
+      'state',
+      'country',
+      'pincode',
+      'primary_contact_person',
+      'key_activities',
+      'areas_of_operation',
+    ];
+
+    const normalizedData = { ...data };
+    if (normalizedData.taxId !== undefined && normalizedData.registrationNumber === undefined) {
+      normalizedData.registrationNumber = normalizedData.taxId;
+    }
+    if (normalizedData.regNumber !== undefined && normalizedData.registrationNumber === undefined) {
+      normalizedData.registrationNumber = normalizedData.regNumber;
+    }
+    if (normalizedData.headquarters !== undefined && normalizedData.address === undefined) {
+      normalizedData.address = normalizedData.headquarters;
+    }
+
     for (const key of allowed) {
       const camel = key.replace(/_([a-z])/g, g => g[1].toUpperCase());
-      const val = data[camel] !== undefined ? data[camel] : data[key];
+      let val = normalizedData[camel] !== undefined ? normalizedData[camel] : normalizedData[key];
       if (val !== undefined) {
-        fields.push(`${key} = ${idx++}`);
+        if (key === 'social_links' && typeof val === 'object' && val !== null && !Array.isArray(val)) {
+          val = JSON.stringify(val);
+        }
+        fields.push(`${key} = $${idx++}`);
         values.push(val);
       }
     }
