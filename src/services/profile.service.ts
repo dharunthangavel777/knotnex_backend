@@ -32,8 +32,13 @@ export class ProfileService {
         uVals.push(data.avatarUrl === '' ? null : data.avatarUrl);
       }
       if (data.username !== undefined) {
+        let uName = data.username;
+        if (typeof uName === 'string') {
+          uName = uName.trim().toLowerCase().replace(/^@+/, '').replace(/@knotnex$/i, '').trim();
+          if (uName.length > 10) uName = uName.substring(0, 10);
+        }
         uFields.push(`username = ${uIdx++}`);
-        uVals.push(data.username);
+        uVals.push(uName);
       }
       if (data.phone !== undefined) {
         uFields.push(`phone = ${uIdx++}`);

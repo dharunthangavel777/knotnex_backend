@@ -164,6 +164,11 @@ export class OrganizationService {
     ];
 
     const normalizedData = { ...data };
+    if (normalizedData.slug !== undefined && typeof normalizedData.slug === 'string') {
+      let slug = normalizedData.slug.trim().toLowerCase().replace(/^@+/, '').replace(/@knotnex$/i, '').trim();
+      if (slug.length > 10) slug = slug.substring(0, 10);
+      normalizedData.slug = slug;
+    }
     if (normalizedData.taxId !== undefined && normalizedData.registrationNumber === undefined) {
       normalizedData.registrationNumber = normalizedData.taxId;
     }

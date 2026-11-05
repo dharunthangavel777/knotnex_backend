@@ -231,7 +231,11 @@ export class UserService {
     const fullName = data.fullName !== undefined ? data.fullName : data.full_name;
     const phone = data.phone;
     const avatarUrl = data.avatarUrl !== undefined ? data.avatarUrl : data.avatar_url;
-    const username = data.username;
+    let username = data.username;
+    if (typeof username === 'string') {
+      username = username.trim().toLowerCase().replace(/^@+/, '').replace(/@knotnex$/i, '').trim();
+      if (username.length > 10) username = username.substring(0, 10);
+    }
 
     const userFields: string[] = [];
     const userValues: any[] = [id];
