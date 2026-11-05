@@ -24,11 +24,11 @@ export class ProfileService {
       const uVals: any[] = [userId];
       let uIdx = 2;
       if (data.fullName !== undefined) {
-        uFields.push(`full_name = ${uIdx++}`);
+        uFields.push(`full_name = $${uIdx++}`);
         uVals.push(data.fullName);
       }
       if (data.avatarUrl !== undefined) {
-        uFields.push(`avatar_url = ${uIdx++}`);
+        uFields.push(`avatar_url = $${uIdx++}`);
         uVals.push(data.avatarUrl === '' ? null : data.avatarUrl);
       }
       if (data.username !== undefined) {
@@ -37,11 +37,11 @@ export class ProfileService {
           uName = uName.trim().toLowerCase().replace(/^@+/, '').replace(/@knotnex$/i, '').trim();
           if (uName.length > 10) uName = uName.substring(0, 10);
         }
-        uFields.push(`username = ${uIdx++}`);
+        uFields.push(`username = $${uIdx++}`);
         uVals.push(uName);
       }
       if (data.phone !== undefined) {
-        uFields.push(`phone = ${uIdx++}`);
+        uFields.push(`phone = $${uIdx++}`);
         uVals.push(data.phone);
       }
       if (uFields.length > 0) {

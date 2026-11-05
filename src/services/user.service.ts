@@ -242,19 +242,19 @@ export class UserService {
     let uIdx = 2;
 
     if (fullName !== undefined) {
-      userFields.push(`full_name = ${uIdx++}`);
+      userFields.push(`full_name = $${uIdx++}`);
       userValues.push(fullName);
     }
     if (phone !== undefined) {
-      userFields.push(`phone = ${uIdx++}`);
+      userFields.push(`phone = $${uIdx++}`);
       userValues.push(phone);
     }
     if (avatarUrl !== undefined) {
-      userFields.push(`avatar_url = ${uIdx++}`);
+      userFields.push(`avatar_url = $${uIdx++}`);
       userValues.push(avatarUrl === '' ? null : avatarUrl);
     }
     if (username !== undefined) {
-      userFields.push(`username = ${uIdx++}`);
+      userFields.push(`username = $${uIdx++}`);
       userValues.push(username);
     }
 
@@ -290,71 +290,71 @@ export class UserService {
     const coverUrl = data.coverUrl !== undefined ? data.coverUrl : data.cover_url;
 
     if (bio !== undefined) {
-      profileFields.push(`bio = ${pIdx++}`);
+      profileFields.push(`bio = $${pIdx++}`);
       profileValues.push(bio);
     }
     if (dateOfBirth !== undefined) {
-      profileFields.push(`date_of_birth = ${pIdx++}`);
+      profileFields.push(`date_of_birth = $${pIdx++}`);
       profileValues.push(dateOfBirth || null);
     }
     if (gender !== undefined) {
-      profileFields.push(`gender = ${pIdx++}`);
+      profileFields.push(`gender = $${pIdx++}`);
       profileValues.push(gender);
     }
     if (district !== undefined) {
-      profileFields.push(`district = ${pIdx++}`);
+      profileFields.push(`district = $${pIdx++}`);
       profileValues.push(district);
     }
     if (state !== undefined) {
-      profileFields.push(`state = ${pIdx++}`);
+      profileFields.push(`state = $${pIdx++}`);
       profileValues.push(state);
     }
     if (city !== undefined) {
-      profileFields.push(`city = ${pIdx++}`);
+      profileFields.push(`city = $${pIdx++}`);
       profileValues.push(city);
     }
     if (country !== undefined) {
-      profileFields.push(`country = ${pIdx++}`);
+      profileFields.push(`country = $${pIdx++}`);
       profileValues.push(country);
     }
     if (address !== undefined) {
-      profileFields.push(`address = ${pIdx++}`);
+      profileFields.push(`address = $${pIdx++}`);
       profileValues.push(address);
     }
     if (pincode !== undefined) {
-      profileFields.push(`pincode = ${pIdx++}`);
+      profileFields.push(`pincode = $${pIdx++}`);
       profileValues.push(pincode);
     }
     if (disabilityType !== undefined) {
-      profileFields.push(`disability_type = ${pIdx++}`);
+      profileFields.push(`disability_type = $${pIdx++}`);
       profileValues.push(disabilityType);
     }
     if (education !== undefined) {
-      profileFields.push(`education = ${pIdx++}`);
+      profileFields.push(`education = $${pIdx++}`);
       profileValues.push(typeof education === 'string' ? education : JSON.stringify(education));
     }
     if (skills !== undefined) {
-      profileFields.push(`skills = ${pIdx++}`);
+      profileFields.push(`skills = $${pIdx++}`);
       profileValues.push(skills);
     }
     if (interests !== undefined) {
-      profileFields.push(`interests = ${pIdx++}`);
+      profileFields.push(`interests = $${pIdx++}`);
       profileValues.push(interests);
     }
     if (languages !== undefined) {
-      profileFields.push(`languages = ${pIdx++}`);
+      profileFields.push(`languages = $${pIdx++}`);
       profileValues.push(languages);
     }
     if (socialLinks !== undefined) {
-      profileFields.push(`social_links = ${pIdx++}`);
+      profileFields.push(`social_links = $${pIdx++}`);
       profileValues.push(typeof socialLinks === 'string' ? socialLinks : JSON.stringify(socialLinks));
     }
     if (accessibility !== undefined) {
-      profileFields.push(`accessibility = ${pIdx++}`);
+      profileFields.push(`accessibility = $${pIdx++}`);
       profileValues.push(typeof accessibility === 'string' ? accessibility : JSON.stringify(accessibility));
     }
     if (coverUrl !== undefined) {
-      profileFields.push(`cover_url = ${pIdx++}`);
+      profileFields.push(`cover_url = $${pIdx++}`);
       profileValues.push(coverUrl === '' ? null : coverUrl);
     }
 
