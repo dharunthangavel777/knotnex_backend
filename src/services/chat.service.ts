@@ -7,6 +7,17 @@ import { logger } from '../config/logger';
 import { getSocketIO } from '../websockets/socket.server';
 
 export class ChatService {
+  static async verifyParticipant(conversationId: string, userId: string): Promise<boolean> {
+    try {
+      const doc = await firestore.collection(COLLECTIONS.CONVERSATIONS).doc(conversationId).get();
+      if (!doc.exists) return false;
+      const parts = (doc.data()?.participants as string[]) || [];
+      return parts.includes(userId);
+    } catch {
+      return false;
+    }
+  }
+
   static async listUserConversations(userId: string) {
     try {
       const snapshot = await firestore

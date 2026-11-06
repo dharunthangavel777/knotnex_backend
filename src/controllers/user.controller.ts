@@ -26,7 +26,8 @@ export class UserController {
   static async getUserById(req: Request, res: Response) {
     try {
       const currentUserId = req.user?.id;
-      const user = await UserService.getUserById(req.params.id, currentUserId);
+      const currentUserRole = req.user?.role;
+      const user = await UserService.getUserById(req.params.id, currentUserId, currentUserRole);
       if (!user) return ApiResponse.error(res, 'User not found', 404, 'NOT_FOUND');
       return ApiResponse.success(res, user);
     } catch (error: any) {
@@ -37,7 +38,8 @@ export class UserController {
   static async getProfile(req: Request, res: Response) {
     try {
       const userId = req.user!.id;
-      const user = await UserService.getUserById(userId, userId);
+      const userRole = req.user!.role;
+      const user = await UserService.getUserById(userId, userId, userRole);
       if (!user) return ApiResponse.error(res, 'User not found', 404, 'NOT_FOUND');
       return ApiResponse.success(res, user);
     } catch (error: any) {

@@ -6,7 +6,14 @@ import { logger } from '../config/logger';
 export const registerChatHandlers = (io: Server, socket: Socket) => {
   const userId = socket.data.userId;
 
-  socket.on('join_conversation', (conversationId: string) => {
+  socket.on('join_conversation', async (conversationId: string) => {
+    if (userId) {
+      const isParticipant = await ChatService.verifyParticipant(conversationId, userId);
+      if (!isParticipant) {
+        socket.emit('chat_error', { message: 'Unauthorized conversation access' });
+        return;
+      }
+    }
     socket.join(`conversation_${conversationId}`);
     logger.debug(`User ${userId} joined room conversation_${conversationId}`);
   });

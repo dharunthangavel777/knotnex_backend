@@ -49,12 +49,18 @@ export class OrganizationService {
     return org;
   }
 
-  static async listOrgs(params: { page?: any; limit?: any; type?: string; search?: string }) {
+  static async listOrgs(params: { page?: any; limit?: any; type?: string; search?: string }, currentUserId?: string) {
     const { page, limit, offset } = getPagination(params);
 
     const conditions: string[] = [];
     const values: any[] = [];
     let idx = 1;
+
+    let selectFollow = 'false AS is_followed';
+    if (currentUserId) {
+      selectFollow = `EXISTS(SELECT 1 FROM org_followers WHERE org_id = organizations.id AND user_id = $${idx++}) AS is_followed`;
+      values.push(currentUserId);
+    }
 
     if (params.type) {
       conditions.push(`type = $${idx++}`);
@@ -69,11 +75,12 @@ export class OrganizationService {
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     try {
-      const countRes = await query(`SELECT COUNT(*) FROM organizations ${whereClause}`, values);
+      const countValues = currentUserId ? values.slice(1) : values;
+      const countRes = await query(`SELECT COUNT(*) FROM organizations ${whereClause}`, countValues);
       const total = parseInt(countRes.rows[0].count, 10);
 
       const orgsRes = await query(
-        `SELECT * FROM organizations ${whereClause} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+        `SELECT *, ${selectFollow} FROM organizations ${whereClause} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
         [...values, limit, offset]
       );
 
@@ -104,9 +111,15 @@ export class OrganizationService {
     }
   }
 
-  static async getOrgById(id: string) {
+  static async getOrgById(id: string, currentUserId?: string) {
     try {
-      const res = await query(`SELECT * FROM organizations WHERE id = $1`, [id]);
+      let selectFollow = 'false AS is_followed';
+      const vals: any[] = [id];
+      if (currentUserId) {
+        selectFollow = `EXISTS(SELECT 1 FROM org_followers WHERE org_id = o.id AND user_id = $2) AS is_followed`;
+        vals.push(currentUserId);
+      }
+      const res = await query(`SELECT o.*, ${selectFollow} FROM organizations o WHERE o.id = $1`, vals);
       if (res.rows[0]) return res.rows[0];
     } catch (_) {}
     return {
@@ -206,11 +219,11 @@ export class OrganizationService {
       const syncValues: any[] = [updatedOrg.owner_id];
       let sIdx = 2;
       if (updatedOrg.logo_url !== undefined && (normalizedData.logo_url !== undefined || normalizedData.logoUrl !== undefined)) {
-        syncFields.push(`avatar_url = ${sIdx++}`);
+        syncFields.push(`avatar_url = $${sIdx++}`);
         syncValues.push(updatedOrg.logo_url);
       }
       if (updatedOrg.slug !== undefined && normalizedData.slug !== undefined) {
-        syncFields.push(`username = ${sIdx++}`);
+        syncFields.push(`username = $${sIdx++}`);
         syncValues.push(updatedOrg.slug);
       }
       if (syncFields.length > 0) {

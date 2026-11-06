@@ -2,7 +2,7 @@ import { query } from '../config/database';
 import { QrGenerator } from '../integrations/qr/qr-generator';
 
 export class ProfileService {
-  static async getProfileByUserId(userId: string) {
+  static async getProfileByUserId(userId: string, currentUserId?: string, userRole?: string) {
     const res = await query(
       `SELECT u.id, u.full_name, u.email, u.phone, u.avatar_url, u.role, u.is_verified,
               p.bio, p.date_of_birth, p.gender, p.district, p.state, p.pincode,
@@ -14,7 +14,22 @@ export class ProfileService {
       [userId]
     );
 
-    return res.rows[0] || null;
+    const row = res.rows[0];
+    if (!row) return null;
+
+    const isSelf = Boolean(currentUserId && currentUserId === row.id);
+    const isAdmin = userRole === 'admin';
+
+    if (!isSelf && !isAdmin) {
+      delete row.email;
+      delete row.phone;
+      delete row.date_of_birth;
+      delete row.gender;
+      delete row.pincode;
+      delete row.disability_type;
+    }
+
+    return row;
   }
 
   static async updateProfile(userId: string, data: any) {

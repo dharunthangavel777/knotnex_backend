@@ -45,7 +45,15 @@ export class RegistrationController {
 
   static async listByUser(req: Request, res: Response) {
     try {
-      const myEvents = await RegistrationService.listRegistrationsByUser(req.params.userId || req.user!.id);
+      const targetUserId = req.params.userId || req.user!.id;
+      const currentUserId = req.user!.id;
+      const currentUserRole = req.user!.role;
+
+      if (targetUserId !== currentUserId && currentUserRole !== 'admin') {
+        return ApiResponse.error(res, 'You do not have permission to view these registrations', 403, 'FORBIDDEN');
+      }
+
+      const myEvents = await RegistrationService.listRegistrationsByUser(targetUserId);
       return ApiResponse.success(res, myEvents);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);
@@ -56,6 +64,13 @@ export class RegistrationController {
     try {
       const registration = await RegistrationService.getRegistrationById(req.params.id);
       if (!registration) return ApiResponse.error(res, 'Registration not found', 404, 'NOT_FOUND');
+
+      const currentUserId = req.user!.id;
+      const currentUserRole = req.user!.role;
+      if (registration.user_id !== currentUserId && currentUserRole !== 'admin') {
+        return ApiResponse.error(res, 'You do not have permission to view this registration', 403, 'FORBIDDEN');
+      }
+
       return ApiResponse.success(res, registration);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);

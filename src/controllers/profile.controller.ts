@@ -5,7 +5,9 @@ import { ApiResponse } from '../utils/response.util';
 export class ProfileController {
   static async getProfile(req: Request, res: Response) {
     try {
-      const profile = await ProfileService.getProfileByUserId(req.params.userId);
+      const targetUserId = req.params.userId === 'me' ? req.user?.id : req.params.userId;
+      if (!targetUserId) return ApiResponse.error(res, 'User ID required', 400);
+      const profile = await ProfileService.getProfileByUserId(targetUserId, req.user?.id, req.user?.role);
       if (!profile) return ApiResponse.error(res, 'Profile not found', 404, 'NOT_FOUND');
       return ApiResponse.success(res, profile);
     } catch (error: any) {

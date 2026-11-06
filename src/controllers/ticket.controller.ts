@@ -34,6 +34,13 @@ export class TicketController {
     try {
       const ticket = await TicketService.getTicketById(req.params.id);
       if (!ticket) return ApiResponse.error(res, 'Ticket not found', 404, 'NOT_FOUND');
+
+      const currentUserId = req.user?.id;
+      const currentUserRole = req.user?.role;
+      if (currentUserRole !== UserRole.ADMIN && ticket.user_id !== currentUserId && ticket.org_id !== req.user?.orgId) {
+        return ApiResponse.error(res, 'You do not have permission to view this ticket', 403, 'FORBIDDEN');
+      }
+
       return ApiResponse.success(res, ticket);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);

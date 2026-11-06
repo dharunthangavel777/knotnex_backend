@@ -193,7 +193,7 @@ export class UserService {
     }
   }
 
-  static async getUserById(id: string, currentUserId?: string) {
+  static async getUserById(id: string, currentUserId?: string, userRole?: string) {
     try {
       const res = await query(
         `SELECT u.id, u.firebase_uid, u.email, u.phone, u.full_name, u.avatar_url, u.role, u.is_verified, u.is_banned, u.category_selection_completed, u.username, u.created_at,
@@ -232,7 +232,8 @@ export class UserService {
                 (SELECT COUNT(*) FROM user_followers WHERE following_id = u.id) as followers_count,
                 (SELECT COUNT(*) FROM user_followers WHERE follower_id = u.id) as following_count,
                 (SELECT COUNT(*) FROM posts WHERE author_id = u.id AND is_moderated = false) as posts_count,
-                EXISTS(SELECT 1 FROM user_followers WHERE follower_id = $2 AND following_id = u.id) as is_following
+                EXISTS(SELECT 1 FROM user_followers WHERE follower_id = $2 AND following_id = u.id) as is_following,
+                EXISTS(SELECT 1 FROM org_followers WHERE user_id = $2 AND org_id = org.id) as org_is_followed
          FROM users u
          LEFT JOIN user_profiles p ON p.user_id = u.id
          LEFT JOIN LATERAL (
@@ -246,7 +247,28 @@ export class UserService {
          WHERE u.id = $1`,
         [id, currentUserId || '00000000-0000-0000-0000-000000000000']
       );
-      return res.rows[0] || null;
+      const row = res.rows[0];
+      if (!row) return null;
+
+      row.is_following = Boolean(row.is_following || row.org_is_followed);
+
+      const isSelf = Boolean(currentUserId && currentUserId === row.id);
+      const isAdmin = userRole === 'admin';
+
+      if (!isSelf && !isAdmin) {
+        delete row.firebase_uid;
+        delete row.email;
+        delete row.phone;
+        delete row.date_of_birth;
+        delete row.gender;
+        delete row.address;
+        delete row.pincode;
+        delete row.disability_type;
+        delete row.verification_request_id;
+        delete row.rejection_reason;
+      }
+
+      return row;
     } catch (dbErr: any) {
       if (config.env === 'development') {
         const found = inMemoryUsers.find((u) => u.id === id);
@@ -304,7 +326,7 @@ export class UserService {
       userValues.push(avatarUrl === '' ? null : avatarUrl);
     }
     if (username !== undefined) {
-      userFields.push(`username = ${uIdx++}`);
+      userFields.push(`username = $${uIdx++}`);
       userValues.push(cleanUsername);
     }
 

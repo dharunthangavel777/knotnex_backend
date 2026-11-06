@@ -266,7 +266,7 @@ export class EventService {
     let idx = 1;
     const targetOrgId = params.orgId || (params as any).org_id;
     if (targetOrgId) {
-      conditions.push(`e.org_id = ${idx++}`);
+      conditions.push(`e.org_id = $${idx++}`);
       values.push(targetOrgId);
     }
 

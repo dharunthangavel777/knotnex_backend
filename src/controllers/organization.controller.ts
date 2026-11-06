@@ -16,7 +16,8 @@ export class OrganizationController {
 
   static async listOrgs(req: Request, res: Response) {
     try {
-      const result = await OrganizationService.listOrgs(req.query);
+      const currentUserId = req.user?.id;
+      const result = await OrganizationService.listOrgs(req.query, currentUserId);
       return ApiResponse.paginated(res, result);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);
@@ -25,7 +26,8 @@ export class OrganizationController {
 
   static async getOrgById(req: Request, res: Response) {
     try {
-      const org = await OrganizationService.getOrgById(req.params.id);
+      const currentUserId = req.user?.id;
+      const org = await OrganizationService.getOrgById(req.params.id, currentUserId);
       if (!org) return ApiResponse.error(res, 'Organization not found', 404, 'NOT_FOUND');
       return ApiResponse.success(res, org);
     } catch (error: any) {
@@ -42,8 +44,12 @@ export class OrganizationController {
       // Ownership authorization check
       if (userRole !== 'admin') {
         const check = await query(`SELECT owner_id FROM organizations WHERE id = $1`, [orgId]);
+        if (check.rows.length === 0) {
+          return ApiResponse.error(res, 'Organization not found', 404, 'NOT_FOUND');
+        }
         const ownerId = check.rows[0]?.owner_id;
-        if (ownerId && ownerId !== userId) {
+        const isOwner = Boolean(ownerId && userId && ownerId === userId);
+        if (!isOwner) {
           const member = await query(
             `SELECT role_in_org FROM org_team_members WHERE org_id = $1 AND user_id = $2`,
             [orgId, userId]
