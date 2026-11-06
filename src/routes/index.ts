@@ -22,6 +22,7 @@ import uploadRoutes from './upload.routes';
 import analyticsRoutes from './analytics.routes';
 import adminRoutes from './admin.routes';
 import verificationRoutes from './verification.routes';
+import emailRoutes from './email.routes';
 import healthRoutes from './health.routes';
 
 const masterRouter = Router();
@@ -78,5 +79,6 @@ masterRouter.use('/verifications', verificationRoutes);
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
 masterRouter.use('/admin', adminRoutes);
+masterRouter.use('/emails', emailRoutes);
 
 export default masterRouter;

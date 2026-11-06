@@ -3,6 +3,7 @@ import { getPagination, buildPaginatedResult } from '../utils/pagination.util';
 import { TicketStatus, TicketPriority } from '../types/enums';
 import { config } from '../config';
 import { logger } from '../config/logger';
+import { EmailService } from '../integrations/email';
 
 // ─── Development In-Memory Mock Store ────────────────────────────────────────
 // In-memory store starts completely empty as requested.
@@ -259,6 +260,28 @@ export class TicketService {
          RETURNING *`,
         [ticketId, authorId, data.message, data.attachments || []]
       );
+
+      // Notify ticket creator if author is support / admin
+      query(`
+        SELECT t.subject, t.creator_id, t.user_id, u.email
+        FROM tickets t
+        LEFT JOIN users u ON COALESCE(t.creator_id, t.user_id) = u.id
+        WHERE t.id = $1
+      `, [ticketId]).then((ticketUserRes) => {
+        const row = ticketUserRes.rows[0];
+        const ticketOwnerId = row?.creator_id || row?.user_id;
+        if (row?.email && ticketOwnerId && ticketOwnerId !== authorId) {
+          EmailService.sendTicketUpdateNotification(
+            row.email,
+            row.subject || 'Support Ticket',
+            data.message,
+            ticketId
+          ).catch((err: any) => {
+            logger.warn('[TicketService] Ticket reply email notification failed', { error: err.message });
+          });
+        }
+      }).catch(() => {});
+
       return res.rows[0];
     } catch (dbErr: any) {
       if (config.env === 'development') {

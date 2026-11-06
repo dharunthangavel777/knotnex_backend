@@ -10,6 +10,20 @@ import { TicketService } from './ticket.service';
 import { FirebaseAuthIntegration } from '../integrations/firebase/auth.firebase';
 import { generateSlug } from '../utils/slug.util';
 import { logger } from '../config/logger';
+import { EmailService } from '../integrations/email';
+
+async function getCreatorUser(userId?: string): Promise<{ email: string; fullName: string } | null> {
+  if (!userId) return null;
+  try {
+    const res = await query('SELECT email, full_name FROM users WHERE id = $1 LIMIT 1', [userId]);
+    if (res.rows.length > 0) {
+      return { email: res.rows[0].email, fullName: res.rows[0].full_name };
+    }
+  } catch {
+    // Non-blocking fallback
+  }
+  return null;
+}
 
 async function resolveReviewerId(adminUserId?: string): Promise<string | null> {
   if (!adminUserId || adminUserId === 'admin') return null;
@@ -789,6 +803,19 @@ export class AdminService {
 
     logger.info(`[AdminService] Approved org verification request ${requestId} for user ${userId}. Role elevated to organization.`);
 
+    // 8. Dispatch branded HTML email to organization
+    const orgTargetEmail = updatedUser?.email || request.organization_email;
+    if (orgTargetEmail) {
+      EmailService.sendOrgVerificationApproved(
+        orgTargetEmail,
+        request.full_name || updatedUser?.full_name || request.organization_name,
+        request.organization_name,
+        slug
+      ).catch((err: any) => {
+        logger.warn('[AdminService] Org verification approved email dispatch failed', { error: err.message });
+      });
+    }
+
     return {
       success: true,
       request: { ...request, status: 'APPROVED' },
@@ -836,6 +863,19 @@ export class AdminService {
         reason: reason || '',
       }
     );
+
+    // Dispatch branded rejection email to organization applicant
+    const applicantEmail = request.organization_email;
+    if (applicantEmail) {
+      EmailService.sendOrgVerificationRejected(
+        applicantEmail,
+        request.full_name || request.organization_name,
+        request.organization_name,
+        reason
+      ).catch((err: any) => {
+        logger.warn('[AdminService] Org verification rejected email dispatch failed', { error: err.message });
+      });
+    }
 
     return {
       success: true,
@@ -897,6 +937,18 @@ export class AdminService {
             `Your event "${ev.title}" has been verified and is now live across KnotNex.`,
             { eventId: ev.id, status: 'published' }
           ).catch(() => {});
+
+          getCreatorUser(ev.created_by).then((creator) => {
+            if (creator?.email) {
+              EmailService.sendContentApprovalNotification(
+                creator.email,
+                creator.fullName,
+                'event',
+                ev.title,
+                'approved'
+              ).catch(() => {});
+            }
+          }).catch(() => {});
         }
         return ev;
       }
@@ -935,6 +987,19 @@ export class AdminService {
             `Your event "${ev.title}" requires revisions: ${reason || 'Does not meet guidelines'}`,
             { eventId: ev.id, status: 'rejected', reason }
           ).catch(() => {});
+
+          getCreatorUser(ev.created_by).then((creator) => {
+            if (creator?.email) {
+              EmailService.sendContentApprovalNotification(
+                creator.email,
+                creator.fullName,
+                'event',
+                ev.title,
+                'rejected',
+                reason
+              ).catch(() => {});
+            }
+          }).catch(() => {});
         }
         return ev;
       }
@@ -973,6 +1038,18 @@ export class AdminService {
             `Your job opening "${job.title}" has been verified and published to applicants.`,
             { jobId: job.id, status: 'open' }
           ).catch(() => {});
+
+          getCreatorUser(job.created_by).then((creator) => {
+            if (creator?.email) {
+              EmailService.sendContentApprovalNotification(
+                creator.email,
+                creator.fullName,
+                'job',
+                job.title,
+                'approved'
+              ).catch(() => {});
+            }
+          }).catch(() => {});
         }
         return job;
       }
@@ -1011,6 +1088,19 @@ export class AdminService {
             `Your job posting "${job.title}" was not approved: ${reason || 'Requires revisions'}`,
             { jobId: job.id, status: 'rejected', reason }
           ).catch(() => {});
+
+          getCreatorUser(job.created_by).then((creator) => {
+            if (creator?.email) {
+              EmailService.sendContentApprovalNotification(
+                creator.email,
+                creator.fullName,
+                'job',
+                job.title,
+                'rejected',
+                reason
+              ).catch(() => {});
+            }
+          }).catch(() => {});
         }
         return job;
       }
@@ -1049,6 +1139,18 @@ export class AdminService {
             `Your welfare scheme "${scheme.title}" has been verified and is active for applications.`,
             { schemeId: scheme.id, status: 'active' }
           ).catch(() => {});
+
+          getCreatorUser(scheme.created_by).then((creator) => {
+            if (creator?.email) {
+              EmailService.sendContentApprovalNotification(
+                creator.email,
+                creator.fullName,
+                'scheme',
+                scheme.title,
+                'approved'
+              ).catch(() => {});
+            }
+          }).catch(() => {});
         }
         return scheme;
       }
@@ -1087,6 +1189,19 @@ export class AdminService {
             `Your scheme "${scheme.title}" was not approved: ${reason || 'Requires revisions'}`,
             { schemeId: scheme.id, status: 'rejected', reason }
           ).catch(() => {});
+
+          getCreatorUser(scheme.created_by).then((creator) => {
+            if (creator?.email) {
+              EmailService.sendContentApprovalNotification(
+                creator.email,
+                creator.fullName,
+                'scheme',
+                scheme.title,
+                'rejected',
+                reason
+              ).catch(() => {});
+            }
+          }).catch(() => {});
         }
         return scheme;
       }

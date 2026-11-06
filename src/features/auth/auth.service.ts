@@ -595,6 +595,11 @@ export class AuthService {
     // Revoke all refresh tokens
     await revokeAllRefreshTokensForUser(payload.userId);
 
+    // Send security notification email async
+    EmailService.sendPasswordChangedEmail(payload.email, '').catch((mailErr: any) => {
+      logger.warn(`[AuthService] Password change email notice failed for ${payload.email}: ${mailErr.message}`);
+    });
+
     logger.info(`[AuthService] Password reset for user ${payload.email}`);
 
     return { message: 'Password reset successfully. Please sign in with your new password.' };

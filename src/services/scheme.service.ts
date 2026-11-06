@@ -4,6 +4,7 @@ import { SchemeStatus } from '../types/enums';
 import { config } from '../config';
 import { logger } from '../config/logger';
 import { ContentRevisionService } from './content_revision.service';
+import { EmailService } from '../integrations/email';
 
 // In-memory fallback for local dev when PostgreSQL is offline
 export const inMemorySchemes: any[] = [];
@@ -389,6 +390,26 @@ export class SchemeService {
         RETURNING *`,
         [schemeId, applicantId, documentUrls, notes, requestedAmount, contactPerson, orgType, metadata]
       );
+
+      // Async email confirmation
+      Promise.all([
+        query(`SELECT email, full_name FROM users WHERE id = $1 LIMIT 1`, [applicantId]),
+        query(`SELECT s.title, o.name as org_name FROM schemes s LEFT JOIN organizations o ON s.org_id = o.id WHERE s.id = $1 LIMIT 1`, [schemeId]),
+      ]).then(([uRes, sRes]) => {
+        const u = uRes.rows[0];
+        const s = sRes.rows[0];
+        if (u?.email) {
+          EmailService.sendSchemeApplicationConfirmation(
+            u.email,
+            u.full_name || '',
+            s?.title || 'Welfare Scheme',
+            s?.org_name || 'Knotnex Partner Organization'
+          ).catch((err: any) => {
+            logger.warn('[SchemeService] Scheme application email failed', { error: err.message });
+          });
+        }
+      }).catch(() => {});
+
       return res.rows[0];
     } catch (dbErr: any) {
       if (config.env === 'development' || !config.isProduction) {
@@ -513,6 +534,31 @@ export class SchemeService {
         `UPDATE scheme_applications SET ${fields.join(', ')} WHERE id = $2 RETURNING *`,
         values
       );
+
+      // Async email notification of status change
+      query(`
+        SELECT u.email, u.full_name, s.title as scheme_title, o.name as org_name
+        FROM scheme_applications sa
+        JOIN users u ON sa.applicant_id = u.id
+        JOIN schemes s ON sa.scheme_id = s.id
+        LEFT JOIN organizations o ON s.org_id = o.id
+        WHERE sa.id = $1
+      `, [appId]).then((detailsRes) => {
+        const d = detailsRes.rows[0];
+        if (d?.email) {
+          EmailService.sendSchemeApplicationStatusUpdate(
+            d.email,
+            d.full_name || '',
+            d.scheme_title || 'Welfare Scheme',
+            d.org_name || 'Organization',
+            stage || status,
+            reviewerNotes
+          ).catch((err: any) => {
+            logger.warn('[SchemeService] Scheme status update email failed', { error: err.message });
+          });
+        }
+      }).catch(() => {});
+
       return res.rows[0];
     } catch (dbErr: any) {
       if (config.env === 'development' || !config.isProduction) {

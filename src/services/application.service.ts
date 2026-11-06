@@ -3,6 +3,8 @@ import { PubSubIntegration } from '../integrations/gcp/pubsub.gcp';
 import { TOPICS } from '../config/pubsub';
 import { JobApplicationStage } from '../types/enums';
 import { NotificationService } from './notification.service';
+import { EmailService } from '../integrations/email';
+import { logger } from '../config/logger';
 
 export class ApplicationService {
   static async submitApplication(userId: string, data: any) {
@@ -55,6 +57,25 @@ export class ApplicationService {
       jobId,
       applicantId: userId,
     });
+
+    // Send confirmation email to applicant async
+    Promise.all([
+      query(`SELECT email, full_name FROM users WHERE id = $1 LIMIT 1`, [userId]),
+      query(`SELECT j.title, o.name as org_name FROM jobs j LEFT JOIN organizations o ON j.org_id = o.id WHERE j.id = $1 LIMIT 1`, [jobId]),
+    ]).then(([uRes, jRes]) => {
+      const u = uRes.rows[0];
+      const j = jRes.rows[0];
+      if (u?.email) {
+        EmailService.sendCareerApplicationConfirmation(
+          u.email,
+          u.full_name || '',
+          j?.title || jobTitle,
+          j?.org_name || 'Knotnex Partner Organization'
+        ).catch((err: any) => {
+          logger.warn('[ApplicationService] Application confirmation email failed', { error: err.message });
+        });
+      }
+    }).catch(() => {});
 
     return application;
   }
@@ -116,6 +137,30 @@ export class ApplicationService {
         `Your application status has been updated to "${stage}".`,
         { applicationId: updated.id }
       ).catch(() => {});
+
+      // Send status update email to applicant async
+      query(`
+        SELECT u.email, u.full_name, j.title as job_title, o.name as org_name
+        FROM job_applications a
+        JOIN users u ON a.applicant_id = u.id
+        JOIN jobs j ON a.job_id = j.id
+        LEFT JOIN organizations o ON j.org_id = o.id
+        WHERE a.id = $1
+      `, [updated.id]).then((detailsRes) => {
+        const details = detailsRes.rows[0];
+        if (details?.email) {
+          EmailService.sendCareerApplicationStatusUpdate(
+            details.email,
+            details.full_name || '',
+            details.job_title || 'Position',
+            details.org_name || 'Organization',
+            stage,
+            reviewerNotes
+          ).catch((err: any) => {
+            logger.warn('[ApplicationService] Application status update email failed', { error: err.message });
+          });
+        }
+      }).catch(() => {});
     }
 
     return updated;

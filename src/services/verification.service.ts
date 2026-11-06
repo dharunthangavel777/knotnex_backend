@@ -1,5 +1,6 @@
 import { query } from '../config/database';
 import { logger } from '../config/logger';
+import { EmailService } from '../integrations/email';
 
 export class VerificationService {
   /**
@@ -40,6 +41,22 @@ export class VerificationService {
     );
 
     logger.info(`[VerificationService] Org verification submitted by user ${userId} for "${data.organizationName}"`);
+
+    // Non-blocking confirmation email dispatch
+    query('SELECT full_name FROM users WHERE id = $1', [userId]).then((userRes) => {
+      const applicantName = userRes.rows[0]?.full_name || data.organizationName;
+      if (data.organizationEmail) {
+        EmailService.sendOrgVerificationSubmitted(
+          data.organizationEmail,
+          applicantName,
+          data.organizationName,
+          data.category
+        ).catch((err: any) => {
+          logger.warn('[VerificationService] Org verification email dispatch failed', { error: err.message });
+        });
+      }
+    }).catch(() => {});
+
     return res.rows[0];
   }
 

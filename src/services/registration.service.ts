@@ -96,10 +96,19 @@ export class RegistrationService {
 
     // Send confirmation email async
     if (personalInfo.email) {
+      const attendeeName = personalInfo.name || personalInfo.fullName || '';
+      const eventDateStr = eventData.event_date ? `${eventData.event_date}${eventData.start_time ? ' at ' + eventData.start_time : ''}` : 'Upcoming Event';
+      const venueStr = eventData.venue_name || 'Event venue details in Knotnex app';
+
       EmailService.sendEventRegistrationConfirmation(
         personalInfo.email,
+        attendeeName,
         eventTitle,
-        qrPassDataUrl
+        eventDateStr,
+        venueStr,
+        qrPassDataUrl,
+        'Standard Pass',
+        0
       ).catch(() => {});
     }
 
