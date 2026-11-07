@@ -6,8 +6,15 @@ const router = Router();
 
 // Conversation endpoints
 router.get('/conversations', authenticate, ChatController.listConversations);
+router.get('/requests', authenticate, ChatController.listMessageRequests);
+router.get('/discover-users', authenticate, ChatController.discoverUsers);
 router.get('/conversations/:id', authenticate, ChatController.getMessages);
 router.post('/conversations', authenticate, ChatController.startConversation);
+router.patch('/conversations/:id/accept', authenticate, ChatController.acceptRequest);
+router.patch('/conversations/:id/reject', authenticate, ChatController.rejectRequest);
+router.patch('/conversations/:id/pin', authenticate, ChatController.togglePin);
+router.patch('/conversations/:id/archive', authenticate, ChatController.toggleArchive);
+router.delete('/conversations/:id', authenticate, ChatController.deleteConversation);
 router.patch('/conversations/:id/read-all', authenticate, ChatController.markConversationAsRead);
 
 // Message endpoints

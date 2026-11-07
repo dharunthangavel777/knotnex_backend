@@ -49,13 +49,18 @@ export class ChatService {
   /**
    * Lists all conversations for the authenticated user, enriched with peer details and unread counts.
    */
-  static async listUserConversations(userId: string) {
+  static async listUserConversations(userId: string, archived: boolean = false) {
     try {
       const res = await query(
         `SELECT 
             c.id,
             c.participant_one,
             c.participant_two,
+            COALESCE(c.status, 'ACCEPTED') AS status,
+            c.initiator_id,
+            ($1 = ANY(COALESCE(c.pinned_by, '{}'))) AS is_pinned,
+            ($1 = ANY(COALESCE(c.archived_by, '{}'))) AS is_archived,
+            ($1 = ANY(COALESCE(c.muted_by, '{}'))) AS is_muted,
             c.last_message,
             c.last_message_at,
             c.last_message_by,
@@ -81,8 +86,11 @@ export class ChatService {
          )
          LEFT JOIN organizations org ON org.owner_id = u.id
          WHERE (c.participant_one = $1 OR c.participant_two = $1)
-         ORDER BY c.last_message_at DESC NULLS LAST`,
-        [userId]
+           AND NOT ($1 = ANY(COALESCE(c.deleted_by, '{}')))
+           AND ($2 = TRUE AND ($1 = ANY(COALESCE(c.archived_by, '{}'))) OR ($2 = FALSE AND NOT ($1 = ANY(COALESCE(c.archived_by, '{}')))))
+           AND (c.status = 'ACCEPTED' OR c.initiator_id = $1)
+         ORDER BY ($1 = ANY(COALESCE(c.pinned_by, '{}'))) DESC, c.last_message_at DESC NULLS LAST`,
+        [userId, archived]
       );
 
       if (res.rows && res.rows.length > 0) {
@@ -104,6 +112,15 @@ export class ChatService {
           return {
             id: row.id,
             participants: [row.participant_one, row.participant_two],
+            status: row.status,
+            initiator_id: row.initiator_id,
+            initiatorId: row.initiator_id,
+            is_pinned: row.is_pinned,
+            isPinned: row.is_pinned,
+            is_archived: row.is_archived,
+            isArchived: row.is_archived,
+            is_muted: row.is_muted,
+            isMuted: row.is_muted,
             last_message: row.last_message || '',
             lastMessage: row.last_message || '',
             last_message_at: row.last_message_at,
@@ -127,6 +144,89 @@ export class ChatService {
   }
 
   /**
+   * Lists incoming stranger message requests for the authenticated user.
+   */
+  static async listMessageRequests(userId: string) {
+    try {
+      const res = await query(
+        `SELECT 
+            c.id,
+            c.participant_one,
+            c.participant_two,
+            c.status,
+            c.initiator_id,
+            c.last_message,
+            c.last_message_at,
+            c.last_message_by,
+            c.created_at,
+            c.updated_at,
+            CASE 
+              WHEN c.participant_one = $1 THEN c.participant_two 
+              ELSE c.participant_one 
+            END AS other_user_id,
+            CASE 
+              WHEN c.participant_one = $1 THEN c.unread_count_one 
+              ELSE c.unread_count_two 
+            END AS unread_count,
+            u.full_name AS other_user_name,
+            u.username AS other_user_username,
+            u.avatar_url AS other_user_avatar,
+            u.role AS other_user_role,
+            org.name AS other_org_name,
+            org.logo_url AS other_org_logo
+         FROM conversations c
+         JOIN users u ON u.id = (
+           CASE WHEN c.participant_one = $1 THEN c.participant_two ELSE c.participant_one END
+         )
+         LEFT JOIN organizations org ON org.owner_id = u.id
+         WHERE (c.participant_one = $1 OR c.participant_two = $1)
+           AND c.status = 'REQUEST_PENDING'
+           AND c.initiator_id <> $1
+           AND NOT ($1 = ANY(COALESCE(c.deleted_by, '{}')))
+         ORDER BY c.last_message_at DESC NULLS LAST`,
+        [userId]
+      );
+
+      return (res.rows || []).map((row) => {
+        const displayName = row.other_org_name || row.other_user_name || 'User';
+        const avatarUrl = row.other_org_logo || row.other_user_avatar || '';
+        const otherUser = {
+          id: row.other_user_id,
+          name: displayName,
+          username: row.other_user_username || 'user',
+          email: `${row.other_user_username || 'user'}@knotnex.com`,
+          avatar_url: avatarUrl,
+          photoUrl: avatarUrl,
+          role: row.other_user_role,
+          is_online: true,
+          is_verified: true,
+        };
+
+        return {
+          id: row.id,
+          participants: [row.participant_one, row.participant_two],
+          status: row.status,
+          initiator_id: row.initiator_id,
+          initiatorId: row.initiator_id,
+          last_message: row.last_message || '',
+          lastMessage: row.last_message || '',
+          last_message_at: row.last_message_at,
+          lastMessageAt: row.last_message_at,
+          last_message_by: row.last_message_by,
+          unread_count: parseInt(row.unread_count || '0', 10),
+          unreadCount: parseInt(row.unread_count || '0', 10),
+          other_user: otherUser,
+          participant: otherUser,
+          created_at: row.created_at,
+        };
+      });
+    } catch (err: any) {
+      logger.error('[ChatService.listMessageRequests] error: ' + err.message);
+      return [];
+    }
+  }
+
+  /**
    * Retrieves messages for a conversation or target user.
    */
   static async getConversationOrDirectMessages(
@@ -136,17 +236,20 @@ export class ChatService {
     offset: number = 0
   ) {
     try {
-      // 1. Check if targetId is a conversation ID
+      // 1. Check if targetId is a conversation ID or peer user ID
       let conversationId = targetId;
       const convCheck = await query(
-        `SELECT id, participant_one, participant_two 
+        `SELECT id, participant_one, participant_two, status, initiator_id 
          FROM conversations 
-         WHERE id = $1 AND (participant_one = $2 OR participant_two = $2)
+         WHERE (id::text = $1 OR ((participant_one = $2 AND participant_two::text = $1) OR (participant_one::text = $1 AND participant_two = $2)))
+           AND (participant_one = $2 OR participant_two = $2)
          LIMIT 1`,
         [targetId, currentUserId]
       );
 
-      if (convCheck.rowCount === 0) {
+      if (convCheck.rowCount && convCheck.rowCount > 0) {
+        conversationId = convCheck.rows[0].id;
+      } else {
         // targetId is a user UUID — find or start the direct conversation
         const conv = await this.startConversation(currentUserId, targetId);
         conversationId = conv.id;
@@ -192,20 +295,34 @@ export class ChatService {
       return msgRes.rows.map((row) => ({
         id: row.id,
         conversationId: row.conversation_id,
+        conversation_id: row.conversation_id,
         senderId: row.sender_id,
+        sender_id: row.sender_id,
         receiverId: row.receiver_id,
+        receiver_id: row.receiver_id,
         content: row.content,
         messageType: row.message_type || 'text',
+        message_type: row.message_type || 'text',
         mediaUrl: row.media_url,
+        media_url: row.media_url,
         isRead: row.is_read,
+        is_read: row.is_read,
         readAt: row.read_at,
         isDelivered: row.is_delivered,
+        is_delivered: row.is_delivered,
         deliveredAt: row.delivered_at,
         replyToId: row.reply_to_id,
+        reply_to_id: row.reply_to_id,
         replyToContent: row.reply_to_content,
         replyToSenderName: row.reply_to_sender_name,
         reactions: row.reactions || {},
         metadata: row.metadata || {},
+        sharedTitle: row.metadata?.sharedTitle,
+        sharedSubtitle: row.metadata?.sharedSubtitle,
+        sharedAvatar: row.metadata?.sharedAvatar,
+        sharedId: row.metadata?.sharedId,
+        sharedActionText: row.metadata?.sharedActionText,
+        sharedData: row.metadata?.sharedData,
         timestamp: row.created_at,
         created_at: row.created_at,
       }));
@@ -242,22 +359,31 @@ export class ChatService {
 
     const findRes = await query(
       `SELECT * FROM conversations 
-       WHERE participant_one = $1 AND participant_two = $2 
+       WHERE (participant_one = $1 AND participant_two = $2)
+          OR (participant_one = $2 AND participant_two = $1)
        LIMIT 1`,
       [p1, p2]
     );
 
     if (findRes.rowCount && findRes.rowCount > 0) {
+      await query(
+        `UPDATE conversations 
+         SET deleted_by = array_remove(COALESCE(deleted_by, '{}'), $1) 
+         WHERE id = $2`,
+        [creatorId, findRes.rows[0].id]
+      ).catch(() => {});
       return findRes.rows[0];
     }
 
     const insertRes = await query(
-      `INSERT INTO conversations (participant_one, participant_two, last_message_at, created_at, updated_at)
-       VALUES ($1, $2, NOW(), NOW(), NOW())
+      `INSERT INTO conversations (participant_one, participant_two, status, initiator_id, last_message_at, created_at, updated_at)
+       VALUES ($1, $2, 'REQUEST_PENDING', $3, NOW(), NOW(), NOW())
        ON CONFLICT (LEAST(participant_one, participant_two), GREATEST(participant_one, participant_two))
-       DO UPDATE SET updated_at = NOW()
+       DO UPDATE SET 
+         deleted_by = array_remove(COALESCE(conversations.deleted_by, '{}'), $3),
+         updated_at = NOW()
        RETURNING *`,
-      [p1, p2]
+      [p1, p2, creatorId]
     );
 
     const conv = insertRes.rows[0];
@@ -315,6 +441,32 @@ export class ChatService {
       throw new Error('Cannot send message: User communication is restricted');
     }
 
+    // Check conversation status
+    const convRow = await query(
+      `SELECT id, participant_one, participant_two, status, initiator_id FROM conversations WHERE id = $1 LIMIT 1`,
+      [conversationId]
+    );
+    if (!convRow.rowCount || convRow.rowCount === 0) {
+      throw new Error('Conversation not found');
+    }
+    const conv = convRow.rows[0];
+
+    if (conv.status === 'REJECTED') {
+      throw new Error('Cannot send message: This conversation request was declined.');
+    }
+    if (conv.status === 'BLOCKED') {
+      throw new Error('Cannot send message: Communication is restricted.');
+    }
+
+    // If recipient is replying to a pending request, automatically ACCEPT it
+    if (conv.status === 'REQUEST_PENDING' && conv.initiator_id && conv.initiator_id !== data.senderId) {
+      await query(`UPDATE conversations SET status = 'ACCEPTED', updated_at = NOW() WHERE id = $1`, [conversationId]);
+      conv.status = 'ACCEPTED';
+      const io = getSocketIO();
+      io?.to(`user:${conv.initiator_id}`).emit('request_accepted', { conversationId });
+      io?.to(`conversation_${conversationId}`).emit('request_accepted', { conversationId });
+    }
+
     // 3. Persist to PostgreSQL messages table
     const msgRes = await query(
       `INSERT INTO messages (
@@ -337,12 +489,13 @@ export class ChatService {
 
     const savedMessage = msgRes.rows[0];
 
-    // 4. Update conversation metadata and unread counter
+    // 4. Update conversation metadata and unread counter (and restore from deleted_by)
     await query(
       `UPDATE conversations
        SET last_message = $1,
            last_message_at = NOW(),
            last_message_by = $2,
+           deleted_by = '{}',
            unread_count_one = CASE WHEN participant_one = $3 THEN unread_count_one + 1 ELSE unread_count_one END,
            unread_count_two = CASE WHEN participant_two = $3 THEN unread_count_two + 1 ELSE unread_count_two END,
            updated_at = NOW()
@@ -355,20 +508,34 @@ export class ChatService {
       ]
     );
 
-    // 5. Construct client payload
+    // 5. Construct client payload (with both camelCase and snake_case + metadata)
     const messagePayload = {
       id: savedMessage.id,
       conversationId: conversationId,
+      conversation_id: conversationId,
       senderId: data.senderId,
+      sender_id: data.senderId,
       receiverId: recipientId,
+      receiver_id: recipientId,
       content: savedMessage.content,
       messageType: savedMessage.message_type,
+      message_type: savedMessage.message_type,
       mediaUrl: savedMessage.media_url,
+      media_url: savedMessage.media_url,
       replyToId: savedMessage.reply_to_id,
+      reply_to_id: savedMessage.reply_to_id,
       isRead: false,
+      is_read: false,
       isDelivered: false,
+      is_delivered: false,
       reactions: {},
       metadata: savedMessage.metadata || {},
+      sharedTitle: data.metadata?.sharedTitle,
+      sharedSubtitle: data.metadata?.sharedSubtitle,
+      sharedAvatar: data.metadata?.sharedAvatar,
+      sharedId: data.metadata?.sharedId,
+      sharedActionText: data.metadata?.sharedActionText,
+      sharedData: data.metadata?.sharedData,
       timestamp: savedMessage.created_at,
       created_at: savedMessage.created_at,
     };
@@ -378,17 +545,26 @@ export class ChatService {
     if (io) {
       io.to(`conversation_${conversationId}`).emit('new_message', messagePayload);
       io.to(`user:${recipientId}`).emit('new_message', messagePayload);
+      if (conv.status === 'REQUEST_PENDING') {
+        io.to(`user:${recipientId}`).emit('message_request', {
+          conversationId,
+          message: messagePayload,
+          senderId: data.senderId,
+        });
+      }
       io.to(`user:${recipientId}`).emit('conversation_updated', {
         conversationId,
         lastMessage: messagePayload.content,
         lastMessageAt: messagePayload.timestamp,
         senderId: data.senderId,
+        status: conv.status,
       });
       io.to(`user:${data.senderId}`).emit('conversation_updated', {
         conversationId,
         lastMessage: messagePayload.content,
         lastMessageAt: messagePayload.timestamp,
         senderId: data.senderId,
+        status: conv.status,
       });
     }
 
@@ -742,6 +918,140 @@ export class ChatService {
       );
     } catch (e: any) {
       logger.warn('[ChatService.dispatchMessageNotification] Error: ' + e.message);
+    }
+  }
+
+  /**
+   * Accepts a stranger message request, converting it to an active conversation.
+   */
+  static async acceptRequest(conversationId: string, userId: string) {
+    const res = await query(
+      `UPDATE conversations 
+       SET status = 'ACCEPTED', updated_at = NOW() 
+       WHERE id = $1 AND (participant_one = $2 OR participant_two = $2)
+       RETURNING *`,
+      [conversationId, userId]
+    );
+    if (!res.rowCount || res.rowCount === 0) {
+      throw new Error('Conversation not found');
+    }
+    const conv = res.rows[0];
+    const otherUserId = conv.participant_one === userId ? conv.participant_two : conv.participant_one;
+    const io = getSocketIO();
+    if (io) {
+      io.to(`user:${otherUserId}`).emit('request_accepted', { conversationId });
+      io.to(`conversation_${conversationId}`).emit('request_accepted', { conversationId });
+    }
+    return conv;
+  }
+
+  /**
+   * Rejects a stranger message request.
+   */
+  static async rejectRequest(conversationId: string, userId: string) {
+    const res = await query(
+      `UPDATE conversations 
+       SET status = 'REJECTED', updated_at = NOW() 
+       WHERE id = $1 AND (participant_one = $2 OR participant_two = $2)
+       RETURNING *`,
+      [conversationId, userId]
+    );
+    if (!res.rowCount || res.rowCount === 0) {
+      throw new Error('Conversation not found');
+    }
+    const conv = res.rows[0];
+    const otherUserId = conv.participant_one === userId ? conv.participant_two : conv.participant_one;
+    const io = getSocketIO();
+    if (io) {
+      io.to(`user:${otherUserId}`).emit('request_rejected', { conversationId });
+    }
+    return conv;
+  }
+
+  /**
+   * Toggles pin status for a conversation for the calling user.
+   */
+  static async togglePin(conversationId: string, userId: string) {
+    const check = await query(`SELECT pinned_by FROM conversations WHERE id = $1`, [conversationId]);
+    const isPinned = (check.rows[0]?.pinned_by || []).includes(userId);
+    const sql = isPinned
+      ? `UPDATE conversations SET pinned_by = array_remove(pinned_by, $1), updated_at = NOW() WHERE id = $2 RETURNING *`
+      : `UPDATE conversations SET pinned_by = array_append(pinned_by, $1), updated_at = NOW() WHERE id = $2 RETURNING *`;
+    const res = await query(sql, [userId, conversationId]);
+    return { isPinned: !isPinned, conversation: res.rows[0] };
+  }
+
+  /**
+   * Toggles archive status for a conversation for the calling user.
+   */
+  static async toggleArchive(conversationId: string, userId: string) {
+    const check = await query(`SELECT archived_by FROM conversations WHERE id = $1`, [conversationId]);
+    const isArchived = (check.rows[0]?.archived_by || []).includes(userId);
+    const sql = isArchived
+      ? `UPDATE conversations SET archived_by = array_remove(archived_by, $1), updated_at = NOW() WHERE id = $2 RETURNING *`
+      : `UPDATE conversations SET archived_by = array_append(archived_by, $1), updated_at = NOW() WHERE id = $2 RETURNING *`;
+    const res = await query(sql, [userId, conversationId]);
+    return { isArchived: !isArchived, conversation: res.rows[0] };
+  }
+
+  /**
+   * Deletes a conversation from the calling user's inbox (soft delete per user).
+   */
+  static async deleteConversationForUser(conversationId: string, userId: string) {
+    await query(
+      `UPDATE conversations 
+       SET deleted_by = array_append(COALESCE(deleted_by, '{}'), $1), updated_at = NOW() 
+       WHERE id = $2`,
+      [userId, conversationId]
+    );
+    return { success: true };
+  }
+
+  /**
+   * Retrieves randomized eligible users for discovery when inbox is empty or exploring.
+   */
+  static async discoverUsers(currentUserId: string, limit: number = 20) {
+    try {
+      const res = await query(
+        `SELECT 
+            u.id, 
+            u.full_name AS name, 
+            u.username, 
+            u.email, 
+            u.avatar_url, 
+            u.role,
+            u.bio,
+            org.name AS org_name,
+            org.logo_url AS org_logo
+         FROM users u
+         LEFT JOIN organizations org ON org.owner_id = u.id
+         WHERE u.id <> $1
+           AND u.is_active = TRUE
+           AND NOT EXISTS (
+             SELECT 1 FROM blocked_users bu 
+             WHERE (bu.blocker_id = $1 AND bu.blocked_id = u.id)
+                OR (bu.blocker_id = u.id AND bu.blocked_id = $1)
+           )
+         ORDER BY RANDOM()
+         LIMIT $2`,
+        [currentUserId, limit]
+      );
+
+      return res.rows.map(row => ({
+        id: row.id,
+        name: row.org_name || row.name || 'KnotNex Member',
+        username: row.username || 'user',
+        email: row.email || '',
+        photoUrl: row.org_logo || row.avatar_url || '',
+        avatar_url: row.org_logo || row.avatar_url || '',
+        bio: row.bio || 'KnotNex Community Member',
+        role: row.role || 'User',
+        is_online: true,
+        is_verified: true,
+      }));
+    } catch (e: any) {
+      logger.warn('[ChatService.discoverUsers] Error: ' + e.message);
+      return [];
     }
   }
 

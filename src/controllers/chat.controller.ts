@@ -5,8 +5,78 @@ import { ApiResponse } from '../utils/response.util';
 export class ChatController {
   static async listConversations(req: Request, res: Response) {
     try {
-      const conversations = await ChatService.listUserConversations(req.user!.id);
+      const archived = req.query.archived === 'true';
+      const conversations = await ChatService.listUserConversations(req.user!.id, archived);
       return ApiResponse.success(res, conversations);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async listMessageRequests(req: Request, res: Response) {
+    try {
+      const requests = await ChatService.listMessageRequests(req.user!.id);
+      return ApiResponse.success(res, requests);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async acceptRequest(req: Request, res: Response) {
+    try {
+      const conversationId = req.params.id;
+      const result = await ChatService.acceptRequest(conversationId, req.user!.id);
+      return ApiResponse.success(res, result, 'Request accepted');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async rejectRequest(req: Request, res: Response) {
+    try {
+      const conversationId = req.params.id;
+      const result = await ChatService.rejectRequest(conversationId, req.user!.id);
+      return ApiResponse.success(res, result, 'Request rejected');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async togglePin(req: Request, res: Response) {
+    try {
+      const conversationId = req.params.id;
+      const result = await ChatService.togglePin(conversationId, req.user!.id);
+      return ApiResponse.success(res, result, result.isPinned ? 'Conversation pinned' : 'Conversation unpinned');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async toggleArchive(req: Request, res: Response) {
+    try {
+      const conversationId = req.params.id;
+      const result = await ChatService.toggleArchive(conversationId, req.user!.id);
+      return ApiResponse.success(res, result, result.isArchived ? 'Conversation archived' : 'Conversation unarchived');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async deleteConversation(req: Request, res: Response) {
+    try {
+      const conversationId = req.params.id;
+      const result = await ChatService.deleteConversationForUser(conversationId, req.user!.id);
+      return ApiResponse.success(res, result, 'Conversation deleted from inbox');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async discoverUsers(req: Request, res: Response) {
+    try {
+      const limit = parseInt((req.query.limit as string) || '20', 10);
+      const results = await ChatService.discoverUsers(req.user!.id, limit);
+      return ApiResponse.success(res, results);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);
     }
