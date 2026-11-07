@@ -10,7 +10,22 @@ export class VerificationController {
         return ApiResponse.error(res, 'Authentication required', 401, 'UNAUTHORIZED');
       }
 
-      const { organizationName, category, organizationEmail, phone, website } = req.body;
+      const {
+        organizationName,
+        category,
+        organizationEmail,
+        phone,
+        website,
+        registrationNumber,
+        documents,
+        documentUrls,
+        address,
+        country,
+        state,
+        city,
+        pincode,
+        applicationType,
+      } = req.body;
       if (!organizationName || !category || !organizationEmail || !phone) {
         return ApiResponse.error(res, 'Missing required organization details', 400, 'VALIDATION_ERROR');
       }
@@ -21,6 +36,15 @@ export class VerificationController {
         organizationEmail,
         phone,
         website,
+        registrationNumber,
+        documents,
+        documentUrls,
+        address,
+        country,
+        state,
+        city,
+        pincode,
+        applicationType: applicationType || 'UPGRADE',
       });
 
       return ApiResponse.created(res, result, 'Verification application submitted successfully');

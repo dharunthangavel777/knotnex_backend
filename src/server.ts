@@ -13,26 +13,22 @@ const server = http.createServer(app);
 const io = initializeSocketServer(server);
 
 const startServer = async () => {
-  // Automated PostgreSQL migration runner (idempotent, advisory-locked)
-  if (config.database.autoMigrate) {
-    try {
-      logger.info('Checking automated PostgreSQL schema migrations...');
-      await runMigrations();
-    } catch (migErr: any) {
-      if (config.env === 'development') {
-        logger.warn('Skipping database migration in development mode (in-memory dev fallback active): ' + migErr.message);
-      } else {
-        logger.error('FATAL: Database migration failed during server startup', { error: migErr.message });
-        process.exit(1);
-      }
-    }
-  }
-
+  // 1. Immediately bind to 0.0.0.0:PORT so Cloud Run health check and port detection pass instantly
   server.listen(config.port, '0.0.0.0', () => {
     logger.info(`🚀 Knotnex API Server listening on 0.0.0.0:${config.port} [${config.env}]`);
     logger.info(`📡 Healthcheck available at: http://localhost:${config.port}/api/v1/health`);
     logger.info(`⚡ Socket.IO real-time engine attached at /socket.io`);
   });
+
+  // 2. Automated PostgreSQL migration runner (idempotent, non-blocking)
+  if (config.database.autoMigrate) {
+    try {
+      logger.info('Checking automated PostgreSQL schema migrations...');
+      await runMigrations();
+    } catch (migErr: any) {
+      logger.warn('Database migration warning during server startup: ' + migErr.message);
+    }
+  }
 };
 
 startServer();

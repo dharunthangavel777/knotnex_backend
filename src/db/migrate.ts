@@ -4,13 +4,28 @@ import { getClient, query } from '../config/database';
 import { logger } from '../config/logger';
 
 export const runMigrations = async () => {
-  const client = await getClient();
+  let client;
   const ADVISORY_LOCK_ID = 74219842;
+  let lockAcquired = false;
 
   try {
+    client = await getClient();
     logger.info('Acquiring migration lock and checking PostgreSQL schema state...');
-    // Advisory lock prevents race conditions if multiple Cloud Run instances boot simultaneously
-    await client.query('SELECT pg_advisory_lock($1);', [ADVISORY_LOCK_ID]);
+    
+    // Non-blocking try-lock prevents startup hangs across multiple Cloud Run instances
+    const lockRes = await client.query<{ acquired: boolean }>(
+      'SELECT pg_try_advisory_lock($1) as acquired;',
+      [ADVISORY_LOCK_ID]
+    );
+    lockAcquired = Boolean(lockRes.rows[0]?.acquired);
+
+    if (!lockAcquired) {
+      logger.info('Migration lock is currently held by another container/worker. Skipping redundant execution.');
+      return { total: 0, newlyApplied: 0 };
+    }
+
+    // Set 30-second statement timeout for safety
+    await client.query('SET statement_timeout = 30000;');
 
     // 1. Ensure migrations tracking table exists
     await client.query(`
@@ -77,12 +92,16 @@ export const runMigrations = async () => {
     logger.error('PostgreSQL database migration process failed', { error: error.message });
     throw error;
   } finally {
-    try {
-      await client.query('SELECT pg_advisory_unlock($1);', [ADVISORY_LOCK_ID]);
-    } catch (unlockErr: any) {
-      logger.warn('Failed to release advisory lock', { error: unlockErr.message });
+    if (client) {
+      if (lockAcquired) {
+        try {
+          await client.query('SELECT pg_advisory_unlock($1);', [ADVISORY_LOCK_ID]);
+        } catch (unlockErr: any) {
+          logger.warn('Failed to release advisory lock', { error: unlockErr.message });
+        }
+      }
+      client.release();
     }
-    client.release();
   }
 };
 

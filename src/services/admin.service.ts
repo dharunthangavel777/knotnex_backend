@@ -726,7 +726,7 @@ export class AdminService {
     // 2. Update request status to APPROVED
     await query(
       `UPDATE organization_verification_requests 
-       SET status = 'APPROVED', reviewed_by = $1, updated_at = NOW() 
+       SET status = 'APPROVED', reviewed_by = $1, reviewed_at = NOW(), updated_at = NOW() 
        WHERE id = $2`,
       [reviewerId, requestId]
     );
@@ -841,7 +841,7 @@ export class AdminService {
 
     await query(
       `UPDATE organization_verification_requests 
-       SET status = 'REJECTED', reviewed_by = $1, rejection_reason = $2, updated_at = NOW() 
+       SET status = 'REJECTED', reviewed_by = $1, rejection_reason = $2, reviewed_at = NOW(), updated_at = NOW() 
        WHERE id = $3`,
       [reviewerId, reason || null, requestId]
     );

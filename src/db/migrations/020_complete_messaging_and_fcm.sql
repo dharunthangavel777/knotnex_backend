@@ -2,7 +2,21 @@
 -- Production Real-time Messaging, Reactions, Delivery Status & Multi-Device FCM Tokens
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- 1. Enhance messages table with delivery receipts, soft deletion, and threaded replies
+-- 1. Ensure messages table exists and enhance with delivery receipts, soft deletion, and threaded replies
+CREATE TABLE IF NOT EXISTS messages (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id UUID NOT NULL,
+    sender_id UUID NOT NULL,
+    receiver_id UUID NOT NULL,
+    content TEXT NOT NULL,
+    message_type VARCHAR(30) DEFAULT 'text',
+    media_url TEXT,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at TIMESTAMPTZ,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 ALTER TABLE messages 
     ADD COLUMN IF NOT EXISTS is_delivered BOOLEAN DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ,
