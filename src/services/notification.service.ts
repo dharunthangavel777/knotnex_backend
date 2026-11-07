@@ -141,6 +141,32 @@ export class NotificationService {
    */
   static async sendPush(toUserId: string, title: string, body: string, data?: Record<string, any>) {
     try {
+      // Check user preferences before dispatching push notification
+      const prefs = await this.getPreferences(toUserId);
+      if (prefs.pause_all) {
+        return { sent: false, reason: 'User paused all push notifications' };
+      }
+
+      const notifType = data?.type || '';
+      if ((notifType === 'chat' || notifType === 'message') && prefs.messages === false) {
+        return { sent: false, reason: 'User disabled message notifications' };
+      }
+      if ((notifType === 'like' || notifType === 'reaction') && prefs.reactions === false) {
+        return { sent: false, reason: 'User disabled reaction notifications' };
+      }
+      if ((notifType === 'comment' || notifType === 'mention') && prefs.comments === false) {
+        return { sent: false, reason: 'User disabled comment notifications' };
+      }
+      if (notifType === 'event' && prefs.events === false) {
+        return { sent: false, reason: 'User disabled event notifications' };
+      }
+      if ((notifType === 'career' || notifType === 'job') && prefs.careers === false) {
+        return { sent: false, reason: 'User disabled career notifications' };
+      }
+      if (notifType === 'scheme' && prefs.schemes === false) {
+        return { sent: false, reason: 'User disabled scheme notifications' };
+      }
+
       // 1. Fetch active devices from user_devices
       let tokens: string[] = [];
       try {
@@ -201,5 +227,85 @@ export class NotificationService {
 
   static async sendNotification(toUserId: string, title: string, body: string, data?: Record<string, any>) {
     return this.createNotification(toUserId, null, 'system', title, body, data || {});
+  }
+
+  static async getPreferences(userId: string) {
+    try {
+      const res = await query(
+        `SELECT * FROM notification_preferences WHERE user_id = $1`,
+        [userId]
+      );
+      if (res.rows.length > 0) {
+        return res.rows[0];
+      }
+    } catch (_) {}
+
+    return {
+      user_id: userId,
+      messages: true,
+      reactions: true,
+      comments: true,
+      followers: true,
+      events: true,
+      careers: true,
+      schemes: true,
+      system_alerts: true,
+      pause_all: false,
+      sound_vibrate: true,
+    };
+  }
+
+  static async updatePreferences(userId: string, prefs: any) {
+    const existing = await this.getPreferences(userId);
+    const updated = {
+      messages: prefs.messages !== undefined ? prefs.messages : (prefs.direct_messages !== undefined ? prefs.direct_messages : existing.messages),
+      reactions: prefs.reactions !== undefined ? prefs.reactions : (prefs.likes_reactions !== undefined ? prefs.likes_reactions : existing.reactions),
+      comments: prefs.comments !== undefined ? prefs.comments : (prefs.comments_mentions !== undefined ? prefs.comments_mentions : existing.comments),
+      followers: prefs.followers !== undefined ? prefs.followers : existing.followers,
+      events: prefs.events !== undefined ? prefs.events : (prefs.events_reminders !== undefined ? prefs.events_reminders : existing.events),
+      careers: prefs.careers !== undefined ? prefs.careers : (prefs.career_alerts !== undefined ? prefs.career_alerts : existing.careers),
+      schemes: prefs.schemes !== undefined ? prefs.schemes : (prefs.schemes_updates !== undefined ? prefs.schemes_updates : existing.schemes),
+      system_alerts: prefs.system_alerts !== undefined ? prefs.system_alerts : existing.system_alerts,
+      pause_all: prefs.pause_all !== undefined ? prefs.pause_all : existing.pause_all,
+      sound_vibrate: prefs.sound_vibrate !== undefined ? prefs.sound_vibrate : existing.sound_vibrate,
+    };
+
+    try {
+      const res = await query(
+        `INSERT INTO notification_preferences (
+          user_id, messages, reactions, comments, followers, events, careers, schemes, system_alerts, pause_all, sound_vibrate, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+          messages = EXCLUDED.messages,
+          reactions = EXCLUDED.reactions,
+          comments = EXCLUDED.comments,
+          followers = EXCLUDED.followers,
+          events = EXCLUDED.events,
+          careers = EXCLUDED.careers,
+          schemes = EXCLUDED.schemes,
+          system_alerts = EXCLUDED.system_alerts,
+          pause_all = EXCLUDED.pause_all,
+          sound_vibrate = EXCLUDED.sound_vibrate,
+          updated_at = NOW()
+        RETURNING *`,
+        [
+          userId,
+          updated.messages,
+          updated.reactions,
+          updated.comments,
+          updated.followers,
+          updated.events,
+          updated.careers,
+          updated.schemes,
+          updated.system_alerts,
+          updated.pause_all,
+          updated.sound_vibrate,
+        ]
+      );
+      return res.rows[0];
+    } catch (e: any) {
+      logger.warn('[NotificationService.updatePreferences] Warning: ' + e.message);
+      return updated;
+    }
   }
 }

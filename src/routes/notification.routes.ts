@@ -6,6 +6,8 @@ import { requireAdmin } from '../middleware/role.middleware';
 const router = Router();
 
 router.get('/', authenticate, NotificationController.listNotifications);
+router.get('/preferences', authenticate, NotificationController.getPreferences);
+router.put('/preferences', authenticate, NotificationController.updatePreferences);
 router.get('/unread-count', authenticate, NotificationController.getUnreadCount);
 router.patch('/read-all', authenticate, NotificationController.markAllAsRead);
 router.patch('/:id/read', authenticate, NotificationController.markAsRead);

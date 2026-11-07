@@ -84,4 +84,22 @@ export class NotificationController {
       return ApiResponse.error(res, error.message, 400);
     }
   }
+
+  static async getPreferences(req: Request, res: Response) {
+    try {
+      const result = await NotificationService.getPreferences(req.user!.id);
+      return ApiResponse.success(res, result, 'Notification preferences retrieved');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async updatePreferences(req: Request, res: Response) {
+    try {
+      const result = await NotificationService.updatePreferences(req.user!.id, req.body);
+      return ApiResponse.success(res, result, 'Notification preferences updated');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
 }
