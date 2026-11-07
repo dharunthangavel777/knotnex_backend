@@ -5,3 +5,4 @@
 ALTER TABLE notification_preferences
     ADD COLUMN IF NOT EXISTS pause_all BOOLEAN DEFAULT FALSE,
     ADD COLUMN IF NOT EXISTS sound_vibrate BOOLEAN DEFAULT TRUE;
+
