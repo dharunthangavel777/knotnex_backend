@@ -5,8 +5,8 @@ import { ApiResponse } from '../utils/response.util';
 export class NotificationController {
   static async listNotifications(req: Request, res: Response) {
     try {
-      const page = parseInt(req.query.page as string || '1', 10);
-      const limit = parseInt(req.query.limit as string || '20', 10);
+      const page = parseInt((req.query.page as string) || '1', 10);
+      const limit = parseInt((req.query.limit as string) || '20', 10);
       const result = await NotificationService.listNotifications(req.user!.id, page, limit);
       return ApiResponse.paginated(res, result);
     } catch (error: any) {
@@ -44,8 +44,28 @@ export class NotificationController {
 
   static async registerDevice(req: Request, res: Response) {
     try {
-      const result = await NotificationService.registerDeviceToken(req.user!.id, req.body.fcmToken);
+      const { fcmToken, platform, deviceId, deviceInfo } = req.body;
+      const result = await NotificationService.registerDeviceToken(
+        req.user!.id,
+        fcmToken,
+        platform,
+        deviceId,
+        deviceInfo
+      );
       return ApiResponse.success(res, result, 'Device token registered');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async unregisterDevice(req: Request, res: Response) {
+    try {
+      const fcmToken = req.body.fcmToken || req.params.token;
+      if (!fcmToken) {
+        return ApiResponse.error(res, 'fcmToken is required', 400);
+      }
+      const result = await NotificationService.unregisterDeviceToken(req.user!.id, fcmToken);
+      return ApiResponse.success(res, result, 'Device token unregistered');
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 400);
     }

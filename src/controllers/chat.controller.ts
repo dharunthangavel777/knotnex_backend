@@ -16,7 +16,8 @@ export class ChatController {
     try {
       const currentUserId = req.user!.id;
       const targetId = req.params.id;
-      const messages = await ChatService.getConversationOrDirectMessages(currentUserId, targetId);
+      const limit = parseInt((req.query.limit as string) || '50', 10);
+      const messages = await ChatService.getConversationOrDirectMessages(currentUserId, targetId, limit);
       return ApiResponse.success(res, messages);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);
@@ -58,7 +59,7 @@ export class ChatController {
         content: req.body.content || '',
         messageType: req.body.messageType,
         mediaUrl: req.body.mediaUrl,
-        replyTo: req.body.replyTo,
+        replyToId: req.body.replyToId || req.body.replyTo,
         metadata: req.body.metadata,
       });
       return ApiResponse.created(res, message);
@@ -67,10 +68,110 @@ export class ChatController {
     }
   }
 
+  static async markConversationAsRead(req: Request, res: Response) {
+    try {
+      const conversationId = req.params.id;
+      const result = await ChatService.markConversationAsRead(conversationId, req.user!.id);
+      return ApiResponse.success(res, result, 'Conversation marked as read');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
   static async markAsRead(req: Request, res: Response) {
     try {
-      const result = await ChatService.markMessageRead(req.params.conversationId, req.params.messageId);
-      return ApiResponse.success(res, result);
+      const conversationId = req.params.conversationId || req.body.conversationId || '';
+      const messageId = req.params.messageId || req.params.id;
+      const result = await ChatService.markMessageRead(conversationId, messageId, req.user!.id);
+      return ApiResponse.success(res, result, 'Message marked as read');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async markDelivered(req: Request, res: Response) {
+    try {
+      const messageId = req.params.id;
+      const result = await ChatService.markMessageDelivered(messageId, req.user!.id);
+      return ApiResponse.success(res, result, 'Message marked as delivered');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async deleteMessage(req: Request, res: Response) {
+    try {
+      const messageId = req.params.id;
+      const result = await ChatService.deleteMessage(messageId, req.user!.id);
+      return ApiResponse.success(res, result, 'Message deleted');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async toggleReaction(req: Request, res: Response) {
+    try {
+      const messageId = req.params.id;
+      const emoji = req.body.emoji;
+      if (!emoji) {
+        return ApiResponse.error(res, 'emoji is required', 400);
+      }
+      const result = await ChatService.toggleReaction(messageId, req.user!.id, emoji);
+      return ApiResponse.success(res, result, 'Reaction updated');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async blockUser(req: Request, res: Response) {
+    try {
+      const blockedId = req.params.id;
+      const reason = req.body.reason;
+      const result = await ChatService.blockUser(req.user!.id, blockedId, reason);
+      return ApiResponse.success(res, result, 'User blocked');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async unblockUser(req: Request, res: Response) {
+    try {
+      const blockedId = req.params.id;
+      const result = await ChatService.unblockUser(req.user!.id, blockedId);
+      return ApiResponse.success(res, result, 'User unblocked');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async reportMessage(req: Request, res: Response) {
+    try {
+      const messageId = req.params.id;
+      const reason = req.body.reason;
+      if (!reason) {
+        return ApiResponse.error(res, 'reason is required', 400);
+      }
+      const result = await ChatService.reportMessage(messageId, req.user!.id, reason);
+      return ApiResponse.success(res, result, 'Message reported');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async getUnreadCount(req: Request, res: Response) {
+    try {
+      const count = await ChatService.getUnreadCount(req.user!.id);
+      return ApiResponse.success(res, { count, unreadCount: count });
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async searchUsers(req: Request, res: Response) {
+    try {
+      const queryText = (req.query.q as string) || '';
+      const results = await ChatService.searchUsers(req.user!.id, queryText);
+      return ApiResponse.success(res, results);
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);
     }

@@ -10,6 +10,8 @@ router.get('/unread-count', authenticate, NotificationController.getUnreadCount)
 router.patch('/read-all', authenticate, NotificationController.markAllAsRead);
 router.patch('/:id/read', authenticate, NotificationController.markAsRead);
 router.post('/register-device', authenticate, NotificationController.registerDevice);
+router.post('/unregister-device', authenticate, NotificationController.unregisterDevice);
+router.delete('/devices/:token', authenticate, NotificationController.unregisterDevice);
 router.post('/send', authenticate, requireAdmin, NotificationController.sendNotification);
 
 export default router;

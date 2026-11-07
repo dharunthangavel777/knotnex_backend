@@ -24,33 +24,63 @@ export const registerChatHandlers = (io: Server, socket: Socket) => {
   });
 
   socket.on('send_message', async (data: {
-    conversationId: string;
+    conversationId?: string;
+    receiverId?: string;
+    recipientId?: string;
     content: string;
     messageType?: any;
     mediaUrl?: string;
+    replyToId?: any;
     replyTo?: any;
     metadata?: any;
   }) => {
     try {
-      const message = await ChatService.sendMessage({
+      if (!userId) {
+        socket.emit('chat_error', { message: 'Authentication required' });
+        return;
+      }
+
+      await ChatService.sendMessage({
         conversationId: data.conversationId,
         senderId: userId,
+        recipientId: data.receiverId || data.recipientId,
         content: data.content,
         messageType: data.messageType,
         mediaUrl: data.mediaUrl,
-        replyTo: data.replyTo,
+        replyToId: data.replyToId || data.replyTo,
         metadata: data.metadata,
       });
-
-      // Broadcast to room
-      io.to(`conversation_${data.conversationId}`).emit('new_message', message);
+      // Broadcast is handled centrally within ChatService.sendMessage to avoid duplicates
     } catch (error: any) {
       socket.emit('chat_error', { message: error.message });
     }
   });
 
+  socket.on('message_read', async (data: { conversationId: string; messageId?: string }) => {
+    try {
+      if (!userId || !data.conversationId) return;
+      if (data.messageId) {
+        await ChatService.markMessageRead(data.conversationId, data.messageId, userId);
+      } else {
+        await ChatService.markConversationAsRead(data.conversationId, userId);
+      }
+    } catch (e: any) {
+      logger.warn('[Socket message_read] Error: ' + e.message);
+    }
+  });
+
+  socket.on('message_delivered', async (data: { messageId: string }) => {
+    try {
+      if (!userId || !data.messageId) return;
+      await ChatService.markMessageDelivered(data.messageId, userId);
+    } catch (e: any) {
+      logger.warn('[Socket message_delivered] Error: ' + e.message);
+    }
+  });
+
   socket.on('typing_start', async (conversationId: string) => {
-    await FirestoreIntegration.setTypingIndicator(conversationId, userId, true);
+    if (!conversationId) return;
+    await FirestoreIntegration.setTypingIndicator(conversationId, userId, true).catch(() => {});
     socket.to(`conversation_${conversationId}`).emit('user_typing', {
       conversationId,
       userId,
@@ -59,7 +89,8 @@ export const registerChatHandlers = (io: Server, socket: Socket) => {
   });
 
   socket.on('typing_stop', async (conversationId: string) => {
-    await FirestoreIntegration.setTypingIndicator(conversationId, userId, false);
+    if (!conversationId) return;
+    await FirestoreIntegration.setTypingIndicator(conversationId, userId, false).catch(() => {});
     socket.to(`conversation_${conversationId}`).emit('user_typing', {
       conversationId,
       userId,
