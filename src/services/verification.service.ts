@@ -3,6 +3,8 @@ import { logger } from '../config/logger';
 import { EmailService } from '../integrations/email';
 import { NotificationService } from './notification.service';
 
+export const inMemoryVerificationRequests: any[] = [];
+
 export interface ApplyVerificationPayload {
   organizationName: string;
   category: string;
@@ -132,7 +134,15 @@ export class VerificationService {
     await query(
       `UPDATE users SET category_selection_completed = TRUE, updated_at = NOW() WHERE id = $1`,
       [userId]
-    );
+    ).catch(() => {});
+
+    // Sync to in-memory requests cache
+    const existingIdx = inMemoryVerificationRequests.findIndex(r => r.id === savedRequest.id || r.user_id === userId);
+    if (existingIdx !== -1) {
+      inMemoryVerificationRequests[existingIdx] = { ...savedRequest, user_full_name: user?.full_name, user_email: user?.email };
+    } else {
+      inMemoryVerificationRequests.unshift({ ...savedRequest, user_full_name: user?.full_name, user_email: user?.email });
+    }
 
     // 4. Notify admin accounts about the new/updated organization upgrade request
     query(`SELECT id FROM users WHERE role = 'admin'`).then((adminRes) => {
@@ -142,22 +152,41 @@ export class VerificationService {
           userId,
           'org_verification_submitted',
           'New Organization Upgrade Request',
-          `${user.full_name || 'A user'} submitted an upgrade request for "${data.organizationName}" (${data.category}).`,
+          `${user?.full_name || 'A user'} submitted an upgrade request for "${data.organizationName}" (${data.category}).`,
           {
             requestId: savedRequest.id,
             applicantId: userId,
             organizationName: data.organizationName,
             category: data.category,
+            type: 'org_verification_submitted',
           }
         ).catch(() => {});
       }
     }).catch(() => {});
 
-    // 5. Send applicant confirmation email non-blockingly
+    // 5. Send in-app notification & push notification to applicant user confirming submission
+    NotificationService.createNotification(
+      userId,
+      userId,
+      'org_verification_submitted',
+      'Organization Application Submitted 📋',
+      `Your application for "${data.organizationName}" (${data.category}) has been submitted for admin verification.`,
+      {
+        requestId: savedRequest.id,
+        status: 'PENDING',
+        organizationName: data.organizationName,
+        category: data.category,
+        type: 'org_verification_submitted',
+      }
+    ).catch((err) => {
+      logger.warn('[VerificationService] Applicant confirmation notification dispatch notice: ' + err.message);
+    });
+
+    // 6. Send applicant confirmation email non-blockingly
     if (data.organizationEmail) {
       EmailService.sendOrgVerificationSubmitted(
         data.organizationEmail,
-        user.full_name || data.organizationName,
+        user?.full_name || data.organizationName,
         data.organizationName,
         data.category
       ).catch((err: any) => {

@@ -11,6 +11,7 @@ import { FirebaseAuthIntegration } from '../integrations/firebase/auth.firebase'
 import { generateSlug } from '../utils/slug.util';
 import { logger } from '../config/logger';
 import { EmailService } from '../integrations/email';
+import { inMemoryVerificationRequests } from './verification.service';
 
 async function getCreatorUser(userId?: string): Promise<{ email: string; fullName: string } | null> {
   if (!userId) return null;
@@ -675,30 +676,56 @@ export class AdminService {
     const values: any[] = [];
     let idx = 1;
 
-    if (params.status) {
+    if (params.status && params.status !== 'all') {
       conditions.push(`r.status = $${idx++}`);
       values.push(params.status.toUpperCase());
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    const countRes = await query(
-      `SELECT COUNT(*) FROM organization_verification_requests r ${whereClause}`,
-      values
-    );
-    const total = parseInt(countRes.rows[0]?.count || '0', 10);
+    try {
+      const countRes = await query(
+        `SELECT COUNT(*) FROM organization_verification_requests r ${whereClause}`,
+        values
+      );
+      const total = parseInt(countRes.rows[0]?.count || '0', 10);
 
-    const rowsRes = await query(
-      `SELECT r.*, u.full_name as user_full_name, u.email as user_email, u.avatar_url as user_avatar, u.role as user_role
-       FROM organization_verification_requests r
-       JOIN users u ON u.id = r.user_id
-       ${whereClause}
-       ORDER BY r.created_at DESC
-       LIMIT $${idx++} OFFSET $${idx++}`,
-      [...values, limit, offset]
-    );
+      const rowsRes = await query(
+        `SELECT r.*, 
+                COALESCE(u.full_name, r.organization_name, 'Unknown Applicant') as user_full_name, 
+                COALESCE(u.email, r.organization_email, '') as user_email, 
+                u.avatar_url as user_avatar, 
+                COALESCE(u.role, 'general_user') as user_role
+         FROM organization_verification_requests r
+         LEFT JOIN users u ON u.id = r.user_id
+         ${whereClause}
+         ORDER BY r.created_at DESC
+         LIMIT $${idx++} OFFSET $${idx++}`,
+        [...values, limit, offset]
+      );
 
-    return buildPaginatedResult(rowsRes.rows, total, page, limit);
+      if (rowsRes.rows.length > 0 || total > 0) {
+        return buildPaginatedResult(rowsRes.rows, total, page, limit);
+      }
+
+      // If DB has 0 rows, check inMemoryVerificationRequests
+      let filtered = [...inMemoryVerificationRequests];
+      if (params.status && params.status !== 'all') {
+        const s = params.status.toUpperCase();
+        filtered = filtered.filter((r) => (r.status || 'PENDING').toUpperCase() === s);
+      }
+      const paged = filtered.slice(offset, offset + limit);
+      return buildPaginatedResult(paged, filtered.length, page, limit);
+    } catch (err: any) {
+      logger.warn('[AdminService] listVerificationRequests query fallback to memory', { error: err.message });
+      let filtered = [...inMemoryVerificationRequests];
+      if (params.status && params.status !== 'all') {
+        const s = params.status.toUpperCase();
+        filtered = filtered.filter((r) => (r.status || 'PENDING').toUpperCase() === s);
+      }
+      const paged = filtered.slice(offset, offset + limit);
+      return buildPaginatedResult(paged, filtered.length, page, limit);
+    }
   }
 
   /**
@@ -794,12 +821,21 @@ export class AdminService {
       notifTitle,
       notifBody,
       {
+        type: 'org_approved',
         orgId: org.id,
         role: 'organization',
         orgName: request.organization_name,
         category: request.category,
       }
     );
+
+    // Sync in-memory requests cache
+    const memReq = inMemoryVerificationRequests.find(r => r.id === requestId);
+    if (memReq) {
+      memReq.status = 'APPROVED';
+      memReq.reviewed_by = reviewerId;
+      memReq.reviewed_at = new Date();
+    }
 
     logger.info(`[AdminService] Approved org verification request ${requestId} for user ${userId}. Role elevated to organization.`);
 
@@ -858,11 +894,21 @@ export class AdminService {
       notifTitle,
       notifBody,
       {
+        type: 'org_rejected',
         requestId,
         status: 'REJECTED',
         reason: reason || '',
       }
     );
+
+    // Sync in-memory requests cache
+    const memReq = inMemoryVerificationRequests.find(r => r.id === requestId);
+    if (memReq) {
+      memReq.status = 'REJECTED';
+      memReq.rejection_reason = reason || null;
+      memReq.reviewed_by = reviewerId;
+      memReq.reviewed_at = new Date();
+    }
 
     // Dispatch branded rejection email to organization applicant
     const applicantEmail = request.organization_email;
