@@ -229,6 +229,99 @@ export class NotificationService {
     return this.createNotification(toUserId, null, 'system', title, body, data || {});
   }
 
+  /**
+   * Broadcasts a welcome push notification to all users who have active FCM device tokens.
+   */
+  static async broadcastWelcomeNotification(customTitle?: string, customBody?: string, testToken?: string) {
+    const title = customTitle || 'Welcome to KnotNex! 🚀';
+    const body = customBody || 'Welcome to KnotNex! Connect with professionals, explore career opportunities, and collaborate in real-time.';
+    const data: Record<string, string> = {
+      type: 'welcome',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+      route: '/home',
+      sentAt: new Date().toISOString(),
+    };
+
+    let targetTokens: { token: string; userId?: string; name?: string }[] = [];
+
+    if (testToken) {
+      targetTokens.push({ token: testToken, name: 'Direct Test Device' });
+    }
+
+    try {
+      // 1. Fetch from user_devices
+      const devRes = await query(
+        `SELECT ud.fcm_token, ud.user_id, u.full_name, u.email
+         FROM user_devices ud
+         JOIN users u ON u.id = ud.user_id
+         WHERE ud.is_active = TRUE AND ud.fcm_token IS NOT NULL`
+      );
+      for (const row of devRes.rows) {
+        if (!targetTokens.some(t => t.token === row.fcm_token)) {
+          targetTokens.push({ token: row.fcm_token, userId: row.user_id, name: row.full_name || row.email });
+        }
+      }
+    } catch (e: any) {
+      logger.warn('[broadcastWelcomeNotification] user_devices query notice: ' + e.message);
+    }
+
+    try {
+      // 2. Fetch from users table
+      const userRes = await query(
+        `SELECT id, full_name, email, fcm_token FROM users WHERE fcm_token IS NOT NULL`
+      );
+      for (const row of userRes.rows) {
+        if (!targetTokens.some(t => t.token === row.fcm_token)) {
+          targetTokens.push({ token: row.fcm_token, userId: row.id, name: row.full_name || row.email });
+        }
+      }
+    } catch (e: any) {
+      logger.warn('[broadcastWelcomeNotification] users query notice: ' + e.message);
+    }
+
+    if (targetTokens.length === 0) {
+      return {
+        sent: false,
+        message: 'No registered device tokens found in database. Make sure users have logged in and registered tokens via /notifications/register-device.',
+        targetCount: 0,
+        results: [],
+      };
+    }
+
+    const results = [];
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (const target of targetTokens) {
+      try {
+        const res = await FcmIntegration.sendPushNotification(target.token, title, body, data);
+        successCount++;
+        results.push({
+          user: target.name || target.userId,
+          token: target.token.substring(0, 25) + '...',
+          status: 'SUCCESS',
+          messageId: res,
+        });
+      } catch (err: any) {
+        failureCount++;
+        results.push({
+          user: target.name || target.userId,
+          token: target.token.substring(0, 25) + '...',
+          status: 'FAILED',
+          error: err.code || err.message,
+        });
+      }
+    }
+
+    return {
+      sent: true,
+      totalDevices: targetTokens.length,
+      successCount,
+      failureCount,
+      results,
+    };
+  }
+
   static async getPreferences(userId: string) {
     try {
       const res = await query(

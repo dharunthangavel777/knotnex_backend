@@ -25,6 +25,7 @@ RUN npm install --omit=dev
 COPY --from=builder /usr/src/app/dist ./dist
 COPY src/db/migrations ./dist/db/migrations
 COPY src/db/migrations ./src/db/migrations
+COPY keys/ ./keys/
 RUN mkdir -p uploads keys
 
 EXPOSE 8080

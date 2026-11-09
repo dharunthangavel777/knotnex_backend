@@ -15,5 +15,7 @@ router.post('/register-device', authenticate, NotificationController.registerDev
 router.post('/unregister-device', authenticate, NotificationController.unregisterDevice);
 router.delete('/devices/:token', authenticate, NotificationController.unregisterDevice);
 router.post('/send', authenticate, requireAdmin, NotificationController.sendNotification);
+router.post('/broadcast-welcome', NotificationController.broadcastWelcome);
+router.post('/test-push', NotificationController.testPush);
 
 export default router;

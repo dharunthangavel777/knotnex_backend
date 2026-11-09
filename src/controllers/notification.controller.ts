@@ -85,6 +85,35 @@ export class NotificationController {
     }
   }
 
+  static async broadcastWelcome(req: Request, res: Response) {
+    try {
+      const { title, body, testToken } = req.body || {};
+      const result = await NotificationService.broadcastWelcomeNotification(title, body, testToken);
+      return ApiResponse.success(res, result, 'Broadcast welcome notifications processed');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async testPush(req: Request, res: Response) {
+    try {
+      const { fcmToken, title, body, data } = req.body || {};
+      if (!fcmToken) {
+        return ApiResponse.error(res, 'fcmToken is required', 400);
+      }
+      const { FcmIntegration } = await import('../integrations/firebase/fcm.firebase');
+      const response = await FcmIntegration.sendPushNotification(
+        fcmToken,
+        title || 'KnotNex Test Notification 🔔',
+        body || 'Push notification delivery pipeline is 100% operational!',
+        data || { type: 'test', timestamp: new Date().toISOString() }
+      );
+      return ApiResponse.success(res, { success: true, messageId: response }, 'Test push notification sent successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message || 'Failed to send test push notification', 500);
+    }
+  }
+
   static async getPreferences(req: Request, res: Response) {
     try {
       const result = await NotificationService.getPreferences(req.user!.id);
