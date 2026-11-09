@@ -22,6 +22,7 @@ export class FcmIntegration {
           priority: 'high',
           notification: {
             sound: 'default',
+            channelId: 'knotnex_high_importance_channel',
             clickAction: 'FLUTTER_NOTIFICATION_CLICK',
           },
         },
@@ -55,6 +56,14 @@ export class FcmIntegration {
         tokens: fcmTokens,
         notification: { title, body },
         data: dataPayload,
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            channelId: 'knotnex_high_importance_channel',
+            clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+          },
+        },
       });
       logger.info('FCM multicast notification sent', {
         successCount: response.successCount,

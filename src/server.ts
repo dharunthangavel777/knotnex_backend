@@ -6,6 +6,7 @@ import { pool } from './config/database';
 import { initializeSocketServer } from './websockets/socket.server';
 
 import { runMigrations } from './db/migrate';
+import { ReminderSchedulerService } from './services/reminder_scheduler.service';
 
 const server = http.createServer(app);
 
@@ -20,7 +21,10 @@ const startServer = async () => {
     logger.info(`⚡ Socket.IO real-time engine attached at /socket.io`);
   });
 
-  // 2. Automated PostgreSQL migration runner (idempotent, non-blocking)
+  // 2. Start scheduled background reminder service (24h/2h event reminders & scheme deadlines)
+  ReminderSchedulerService.startScheduler();
+
+  // 3. Automated PostgreSQL migration runner (idempotent, non-blocking)
   if (config.database.autoMigrate) {
     try {
       logger.info('Checking automated PostgreSQL schema migrations...');
@@ -36,6 +40,8 @@ startServer();
 // ─── Graceful Shutdown ───
 const gracefulShutdown = async (signal: string) => {
   logger.info(`Received ${signal}. Gracefully shutting down...`);
+
+  ReminderSchedulerService.stopScheduler();
 
   server.close(async () => {
     logger.info('HTTP server closed.');
