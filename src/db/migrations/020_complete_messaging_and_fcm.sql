@@ -73,16 +73,35 @@ CREATE INDEX IF NOT EXISTS idx_reported_messages_status ON reported_messages (st
 CREATE TABLE IF NOT EXISTS user_devices (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    fcm_token TEXT NOT NULL,
-    platform VARCHAR(20) DEFAULT 'android' CHECK (platform IN ('android', 'ios', 'web', 'windows', 'macos')),
+    fcm_token TEXT,
+    platform VARCHAR(20) DEFAULT 'android',
     device_id TEXT,
     device_info JSONB DEFAULT '{}'::jsonb,
     is_active BOOLEAN DEFAULT TRUE,
     last_active_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT uq_user_fcm_token UNIQUE (user_id, fcm_token)
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Ensure all new columns exist if user_devices was previously created in migration 001
+ALTER TABLE user_devices
+    ADD COLUMN IF NOT EXISTS fcm_token TEXT,
+    ADD COLUMN IF NOT EXISTS platform VARCHAR(20) DEFAULT 'android',
+    ADD COLUMN IF NOT EXISTS device_id TEXT,
+    ADD COLUMN IF NOT EXISTS device_info JSONB DEFAULT '{}'::jsonb,
+    ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'uq_user_fcm_token'
+    ) THEN
+        ALTER TABLE user_devices ADD CONSTRAINT uq_user_fcm_token UNIQUE (user_id, fcm_token);
+    END IF;
+EXCEPTION
+    WHEN OTHERS THEN NULL;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_user_devices_user_active ON user_devices (user_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_user_devices_token ON user_devices (fcm_token);
