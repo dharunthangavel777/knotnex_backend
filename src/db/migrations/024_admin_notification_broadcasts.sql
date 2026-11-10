@@ -50,3 +50,4 @@ CREATE TABLE IF NOT EXISTS notification_broadcast_recipients (
 CREATE INDEX IF NOT EXISTS idx_recipients_broadcast_status ON notification_broadcast_recipients (broadcast_id, status);
 CREATE INDEX IF NOT EXISTS idx_recipients_user ON notification_broadcast_recipients (user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_recipients_fcm_token ON notification_broadcast_recipients (fcm_token);
+
