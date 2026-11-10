@@ -401,4 +401,422 @@ export class NotificationService {
       return updated;
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ADMIN PUSH NOTIFICATION BROADCAST MANAGEMENT
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Estimates the recipient audience count for an Admin Broadcast based on filters and preferences.
+   */
+  static async estimateBroadcastAudience(
+    targetAudience: string = 'all',
+    targetCriteria: any = {},
+    isMandatory: boolean = false,
+    category: string = 'announcement'
+  ) {
+    try {
+      let roleFilter = '';
+      if (targetAudience === 'users') {
+        roleFilter = `AND u.role = 'user'`;
+      } else if (targetAudience === 'organizations') {
+        roleFilter = `AND u.role = 'organization'`;
+      } else if (targetAudience === 'admins') {
+        roleFilter = `AND u.role = 'admin'`;
+      }
+
+      let criteriaFilter = '';
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      if (targetCriteria?.userIds && Array.isArray(targetCriteria.userIds) && targetCriteria.userIds.length > 0) {
+        criteriaFilter += ` AND u.id = ANY($${paramIdx})`;
+        params.push(targetCriteria.userIds);
+        paramIdx++;
+      }
+
+      // Query active user devices
+      const deviceQuery = `
+        SELECT 
+          COUNT(DISTINCT u.id) as user_count,
+          COUNT(DISTINCT ud.fcm_token) as device_count,
+          COUNT(DISTINCT CASE WHEN ud.platform = 'android' THEN ud.fcm_token END) as android_count,
+          COUNT(DISTINCT CASE WHEN ud.platform = 'ios' THEN ud.fcm_token END) as ios_count,
+          COUNT(DISTINCT CASE WHEN ud.platform = 'web' THEN ud.fcm_token END) as web_count
+        FROM users u
+        LEFT JOIN user_devices ud ON ud.user_id = u.id AND ud.is_active = TRUE AND ud.fcm_token IS NOT NULL
+        LEFT JOIN notification_preferences np ON np.user_id = u.id
+        WHERE 1=1 ${roleFilter} ${criteriaFilter}
+        ${!isMandatory ? `AND (np.pause_all IS NULL OR np.pause_all = FALSE)` : ''}
+      `;
+
+      const res = await query(deviceQuery, params);
+      const row = res.rows[0] || {};
+
+      return {
+        totalUsers: parseInt(row.user_count || '0', 10),
+        totalDevices: parseInt(row.device_count || '0', 10),
+        androidDevices: parseInt(row.android_count || '0', 10),
+        iosDevices: parseInt(row.ios_count || '0', 10),
+        webDevices: parseInt(row.web_count || '0', 10),
+      };
+    } catch (err: any) {
+      logger.error('[estimateBroadcastAudience] Error: ' + err.message);
+      return { totalUsers: 0, totalDevices: 0, androidDevices: 0, iosDevices: 0, webDevices: 0 };
+    }
+  }
+
+  /**
+   * Creates an Admin Broadcast record (draft or scheduled).
+   */
+  static async createBroadcast(data: any, adminUserId: string, adminName: string) {
+    const {
+      title,
+      body,
+      imageUrl,
+      category = 'announcement',
+      priority = 'normal',
+      deepLink,
+      actionLabel,
+      targetAudience = 'all',
+      targetCriteria = {},
+      isMandatory = false,
+      scheduledAt,
+    } = data;
+
+    const initialStatus = scheduledAt ? 'scheduled' : 'draft';
+
+    const res = await query(
+      `INSERT INTO notification_broadcasts (
+        title, body, image_url, category, priority, deep_link, action_label,
+        target_audience, target_criteria, is_mandatory, status, scheduled_at,
+        created_by, created_by_name, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
+      RETURNING *`,
+      [
+        title,
+        body,
+        imageUrl || null,
+        category,
+        priority,
+        deepLink || null,
+        actionLabel || null,
+        targetAudience,
+        JSON.stringify(targetCriteria),
+        isMandatory,
+        initialStatus,
+        scheduledAt ? new Date(scheduledAt) : null,
+        adminUserId,
+        adminName,
+      ]
+    );
+
+    return res.rows[0];
+  }
+
+  /**
+   * Dispatches an Admin Broadcast to target audience devices and persists delivery metrics.
+   */
+  static async sendBroadcast(broadcastId: string) {
+    // 1. Fetch broadcast details
+    const bRes = await query(`SELECT * FROM notification_broadcasts WHERE id = $1`, [broadcastId]);
+    if (!bRes.rows || bRes.rows.length === 0) {
+      throw new Error('Broadcast not found');
+    }
+    const broadcast = bRes.rows[0];
+
+    if (broadcast.status === 'sent') {
+      throw new Error('Broadcast has already been sent');
+    }
+    if (broadcast.status === 'processing') {
+      throw new Error('Broadcast is currently being processed');
+    }
+
+    // Set status to processing
+    await query(`UPDATE notification_broadcasts SET status = 'processing', updated_at = NOW() WHERE id = $1`, [broadcastId]);
+
+    try {
+      // 2. Resolve audience
+      let roleFilter = '';
+      if (broadcast.target_audience === 'users') {
+        roleFilter = `AND u.role = 'user'`;
+      } else if (broadcast.target_audience === 'organizations') {
+        roleFilter = `AND u.role = 'organization'`;
+      } else if (broadcast.target_audience === 'admins') {
+        roleFilter = `AND u.role = 'admin'`;
+      }
+
+      let criteriaFilter = '';
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      const criteria = typeof broadcast.target_criteria === 'string'
+        ? JSON.parse(broadcast.target_criteria)
+        : (broadcast.target_criteria || {});
+
+      if (criteria?.userIds && Array.isArray(criteria.userIds) && criteria.userIds.length > 0) {
+        criteriaFilter += ` AND u.id = ANY($${paramIdx})`;
+        params.push(criteria.userIds);
+        paramIdx++;
+      }
+
+      // Query target users and their active device tokens
+      const recipientsQuery = `
+        SELECT 
+          u.id as user_id,
+          u.full_name,
+          ud.fcm_token,
+          ud.platform,
+          np.pause_all,
+          np.events,
+          np.careers,
+          np.schemes,
+          np.system_alerts
+        FROM users u
+        LEFT JOIN user_devices ud ON ud.user_id = u.id AND ud.is_active = TRUE AND ud.fcm_token IS NOT NULL
+        LEFT JOIN notification_preferences np ON np.user_id = u.id
+        WHERE 1=1 ${roleFilter} ${criteriaFilter}
+      `;
+
+      const recRes = await query(recipientsQuery, params);
+      const rows = recRes.rows || [];
+
+      // Group by user and filter by preferences if not mandatory
+      const distinctUsers = new Set<string>();
+      const validTargets: { userId: string; token: string; platform: string }[] = [];
+
+      for (const row of rows) {
+        distinctUsers.add(row.user_id);
+
+        if (!broadcast.is_mandatory) {
+          if (row.pause_all === true) continue;
+          if (broadcast.category === 'event' && row.events === false) continue;
+          if (broadcast.category === 'career' && row.careers === false) continue;
+          if (broadcast.category === 'scheme' && row.schemes === false) continue;
+          if (broadcast.category === 'system' && row.system_alerts === false) continue;
+        }
+
+        if (row.fcm_token) {
+          validTargets.push({
+            userId: row.user_id,
+            token: row.fcm_token,
+            platform: row.platform || 'android',
+          });
+        }
+      }
+
+      const totalTargeted = validTargets.length;
+      let totalSent = 0;
+      let totalFailed = 0;
+
+      // Prepare payload
+      const dataPayload: Record<string, string> = {
+        type: 'broadcast',
+        broadcastId: broadcast.id,
+        category: broadcast.category || 'announcement',
+        click_action: 'FLUTTER_NOTIFICATION_CLICK',
+        deepLink: broadcast.deep_link || '',
+        sentAt: new Date().toISOString(),
+      };
+
+      if (broadcast.deep_link) {
+        dataPayload.route = broadcast.deep_link;
+      }
+
+      const sendOptions = {
+        imageUrl: broadcast.image_url || undefined,
+        priority: broadcast.priority || 'normal',
+      };
+
+      // 3. Multicast in chunks of 500
+      const tokens = validTargets.map(t => t.token);
+      if (tokens.length > 0) {
+        const sendResult = await FcmIntegration.sendMulticast(
+          tokens,
+          broadcast.title,
+          broadcast.body,
+          dataPayload,
+          sendOptions
+        );
+
+        totalSent = sendResult.successCount;
+        totalFailed = sendResult.failureCount;
+
+        // Deactivate bad tokens
+        if (sendResult.invalidTokens.length > 0) {
+          await query(
+            `UPDATE user_devices SET is_active = FALSE, updated_at = NOW() WHERE fcm_token = ANY($1)`,
+            [sendResult.invalidTokens]
+          ).catch(() => {});
+        }
+      }
+
+      // 4. Batch insert into in-app notifications so all targeted users have it in notification center
+      const uniqueTargetUserIds = Array.from(distinctUsers);
+      for (const uid of uniqueTargetUserIds) {
+        await query(
+          `INSERT INTO notifications (user_id, type, title, body, data, created_at)
+           VALUES ($1, 'broadcast', $2, $3, $4, NOW())`,
+          [uid, broadcast.title, broadcast.body, JSON.stringify(dataPayload)]
+        ).catch(() => {});
+      }
+
+      // 5. Update broadcast status and metrics
+      const updatedRes = await query(
+        `UPDATE notification_broadcasts
+         SET 
+           status = 'sent',
+           total_targeted = $1,
+           total_sent = $2,
+           total_failed = $3,
+           sent_at = NOW(),
+           completed_at = NOW(),
+           updated_at = NOW()
+         WHERE id = $4
+         RETURNING *`,
+        [totalTargeted, totalSent, totalFailed, broadcastId]
+      );
+
+      return updatedRes.rows[0];
+    } catch (err: any) {
+      await query(
+        `UPDATE notification_broadcasts SET status = 'failed', updated_at = NOW() WHERE id = $1`,
+        [broadcastId]
+      ).catch(() => {});
+      logger.error('[sendBroadcast] Critical failure: ' + err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * Lists broadcasts with pagination, search, and aggregated dashboard metrics.
+   */
+  static async listBroadcasts(page: number = 1, limit: number = 20, status?: string) {
+    const offset = (page - 1) * limit;
+
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+    if (status && status !== 'all') {
+      whereClause += ` AND status = $1`;
+      params.push(status);
+    }
+
+    const countQuery = `SELECT COUNT(*) as total FROM notification_broadcasts ${whereClause}`;
+    const listQuery = `
+      SELECT * FROM notification_broadcasts
+      ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
+
+    const [countRes, itemsRes, statsRes] = await Promise.all([
+      query(countQuery, params),
+      query(listQuery, [...params, limit, offset]),
+      query(`
+        SELECT 
+          COUNT(*) as total_broadcasts,
+          COALESCE(SUM(total_sent), 0) as total_delivered,
+          COALESCE(SUM(total_failed), 0) as total_failed,
+          COUNT(CASE WHEN status = 'scheduled' THEN 1 END) as total_scheduled,
+          COUNT(CASE WHEN status = 'draft' THEN 1 END) as total_drafts
+        FROM notification_broadcasts
+      `),
+    ]);
+
+    const total = parseInt(countRes.rows[0]?.total || '0', 10);
+    const statsRow = statsRes.rows[0] || {};
+
+    const metrics = {
+      totalBroadcasts: parseInt(statsRow.total_broadcasts || '0', 10),
+      totalDelivered: parseInt(statsRow.total_delivered || '0', 10),
+      totalFailed: parseInt(statsRow.total_failed || '0', 10),
+      totalScheduled: parseInt(statsRow.total_scheduled || '0', 10),
+      totalDrafts: parseInt(statsRow.total_drafts || '0', 10),
+    };
+
+    return {
+      ...buildPaginatedResult(itemsRes.rows, total, page, limit),
+      metrics,
+    };
+  }
+
+  /**
+   * Retrieves single broadcast details along with recipient logs.
+   */
+  static async getBroadcastDetails(broadcastId: string) {
+    const res = await query(`SELECT * FROM notification_broadcasts WHERE id = $1`, [broadcastId]);
+    if (!res.rows || res.rows.length === 0) return null;
+
+    const broadcast = res.rows[0];
+
+    // Get sample recipient statuses
+    const recRes = await query(
+      `SELECT nbr.*, u.full_name, u.email
+       FROM notification_broadcast_recipients nbr
+       LEFT JOIN users u ON u.id = nbr.user_id
+       WHERE nbr.broadcast_id = $1
+       ORDER BY nbr.created_at DESC
+       LIMIT 50`,
+      [broadcastId]
+    ).catch(() => ({ rows: [] }));
+
+    return {
+      broadcast,
+      recentRecipients: recRes.rows,
+    };
+  }
+
+  /**
+   * Cancels a scheduled or draft broadcast.
+   */
+  static async cancelBroadcast(broadcastId: string) {
+    const res = await query(
+      `UPDATE notification_broadcasts 
+       SET status = 'cancelled', updated_at = NOW() 
+       WHERE id = $1 AND status IN ('draft', 'scheduled')
+       RETURNING *`,
+      [broadcastId]
+    );
+    if (!res.rows || res.rows.length === 0) {
+      throw new Error('Broadcast cannot be cancelled (must be in draft or scheduled state)');
+    }
+    return res.rows[0];
+  }
+
+  /**
+   * Retries sending to failed recipients of a broadcast.
+   */
+  static async retryFailedRecipients(broadcastId: string) {
+    const bRes = await query(`SELECT * FROM notification_broadcasts WHERE id = $1`, [broadcastId]);
+    if (!bRes.rows || bRes.rows.length === 0) throw new Error('Broadcast not found');
+    const broadcast = bRes.rows[0];
+
+    // Find failed tokens
+    const failedRes = await query(
+      `SELECT nbr.*, ud.fcm_token
+       FROM notification_broadcast_recipients nbr
+       JOIN user_devices ud ON ud.user_id = nbr.user_id AND ud.is_active = TRUE
+       WHERE nbr.broadcast_id = $1 AND nbr.status = 'failed'`,
+      [broadcastId]
+    ).catch(() => ({ rows: [] }));
+
+    const tokens = failedRes.rows.map(r => r.fcm_token).filter(Boolean);
+    if (tokens.length === 0) {
+      return { retried: 0, message: 'No failed recipients eligible for retry' };
+    }
+
+    const dataPayload: Record<string, string> = {
+      type: 'broadcast_retry',
+      broadcastId: broadcast.id,
+      category: broadcast.category || 'announcement',
+      click_action: 'FLUTTER_NOTIFICATION_CLICK',
+    };
+
+    const res = await FcmIntegration.sendMulticast(tokens, broadcast.title, broadcast.body, dataPayload);
+    return {
+      retried: tokens.length,
+      successCount: res.successCount,
+      failureCount: res.failureCount,
+    };
+  }
 }

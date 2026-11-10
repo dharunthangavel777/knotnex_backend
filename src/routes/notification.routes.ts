@@ -18,4 +18,13 @@ router.post('/send', authenticate, requireAdmin, NotificationController.sendNoti
 router.post('/broadcast-welcome', NotificationController.broadcastWelcome);
 router.post('/test-push', NotificationController.testPush);
 
+// Admin Broadcast Management Routes
+router.get('/broadcasts/estimate', authenticate, requireAdmin, NotificationController.estimateBroadcastAudience);
+router.get('/broadcasts', authenticate, requireAdmin, NotificationController.listBroadcasts);
+router.post('/broadcasts', authenticate, requireAdmin, NotificationController.createBroadcast);
+router.get('/broadcasts/:id', authenticate, requireAdmin, NotificationController.getBroadcastDetails);
+router.post('/broadcasts/:id/send', authenticate, requireAdmin, NotificationController.sendBroadcast);
+router.post('/broadcasts/:id/cancel', authenticate, requireAdmin, NotificationController.cancelBroadcast);
+router.post('/broadcasts/:id/retry', authenticate, requireAdmin, NotificationController.retryFailedRecipients);
+
 export default router;

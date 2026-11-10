@@ -131,4 +131,91 @@ export class NotificationController {
       return ApiResponse.error(res, error.message, 400);
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ADMIN PUSH NOTIFICATION BROADCAST CONTROLLERS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  static async estimateBroadcastAudience(req: Request, res: Response) {
+    try {
+      const { targetAudience, targetCriteria, isMandatory, category } = req.query;
+      const parsedCriteria = typeof targetCriteria === 'string' ? JSON.parse(targetCriteria) : (targetCriteria || {});
+      const result = await NotificationService.estimateBroadcastAudience(
+        targetAudience as string,
+        parsedCriteria,
+        isMandatory === 'true',
+        category as string
+      );
+      return ApiResponse.success(res, result, 'Audience estimated successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async listBroadcasts(req: Request, res: Response) {
+    try {
+      const page = parseInt((req.query.page as string) || '1', 10);
+      const limit = parseInt((req.query.limit as string) || '20', 10);
+      const status = req.query.status as string;
+      const result = await NotificationService.listBroadcasts(page, limit, status);
+      return ApiResponse.paginated(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async createBroadcast(req: Request, res: Response) {
+    try {
+      const adminUserId = req.user!.id;
+      const adminName = (req.user as any)?.full_name || (req.user as any)?.name || 'Admin';
+      const result = await NotificationService.createBroadcast(req.body, adminUserId, adminName);
+
+      // If user passed sendNow: true, trigger send immediately
+      if (req.body.sendNow === true && result?.id) {
+        const sentResult = await NotificationService.sendBroadcast(result.id);
+        return ApiResponse.success(res, sentResult, 'Broadcast dispatched successfully', 201);
+      }
+
+      return ApiResponse.success(res, result, 'Broadcast created successfully', 201);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async getBroadcastDetails(req: Request, res: Response) {
+    try {
+      const result = await NotificationService.getBroadcastDetails(req.params.id);
+      if (!result) return ApiResponse.error(res, 'Broadcast not found', 404, 'NOT_FOUND');
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async sendBroadcast(req: Request, res: Response) {
+    try {
+      const result = await NotificationService.sendBroadcast(req.params.id);
+      return ApiResponse.success(res, result, 'Broadcast sent successfully');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async cancelBroadcast(req: Request, res: Response) {
+    try {
+      const result = await NotificationService.cancelBroadcast(req.params.id);
+      return ApiResponse.success(res, result, 'Broadcast cancelled');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
+
+  static async retryFailedRecipients(req: Request, res: Response) {
+    try {
+      const result = await NotificationService.retryFailedRecipients(req.params.id);
+      return ApiResponse.success(res, result, 'Retry triggered for failed recipients');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 400);
+    }
+  }
 }
