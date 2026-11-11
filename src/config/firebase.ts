@@ -22,18 +22,21 @@ try {
       projectId: config.firebase.projectId,
     });
     logger.info('Firebase Admin SDK initialized with Service Account Key');
-  } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-    firebaseApp = admin.initializeApp({
-      credential: admin.credential.applicationDefault(),
-      projectId: config.firebase.projectId,
-    });
-    logger.info('Firebase Admin SDK initialized with Application Default Credentials');
   } else {
-    // Fallback initialize for dev/mock mode
-    firebaseApp = admin.initializeApp({
-      projectId: config.firebase.projectId,
-    });
-    logger.warn('Firebase Admin SDK initialized with project ID only (no credential file found)');
+    // Attempt Application Default Credentials (Cloud Run runtime identity) before fallback
+    try {
+      firebaseApp = admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        projectId: config.firebase.projectId,
+      });
+      logger.info('Firebase Admin SDK initialized with Application Default Credentials');
+    } catch (adcErr: any) {
+      // Fallback initialize for dev/mock mode
+      firebaseApp = admin.initializeApp({
+        projectId: config.firebase.projectId,
+      });
+      logger.warn('Firebase Admin SDK initialized with project ID only (no credentials found)');
+    }
   }
 } catch (error: any) {
   logger.error('Failed to initialize Firebase Admin SDK', { error: error.message });

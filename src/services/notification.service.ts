@@ -18,6 +18,13 @@ export class NotificationService {
     if (!fcmToken) return { success: false, message: 'No token provided' };
 
     try {
+      // 1. Deactivate this physical device token if it was previously registered to another account (prevents cross-account leak on logout/login)
+      await query(
+        `UPDATE user_devices SET is_active = FALSE, updated_at = NOW() WHERE fcm_token = $1 AND user_id != $2`,
+        [fcmToken, userId]
+      ).catch(() => {});
+
+      // 2. Upsert active token record for current authenticated user
       await query(
         `INSERT INTO user_devices (user_id, fcm_token, platform, device_id, device_info, is_active, last_active_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, TRUE, NOW(), NOW())
