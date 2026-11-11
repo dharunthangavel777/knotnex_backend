@@ -6,9 +6,21 @@ import path from 'path';
 import fs from 'fs';
 
 let credentials: any = undefined;
-if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+if (process.env.GCS_SERVICE_ACCOUNT_JSON) {
   try {
-    credentials = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    const parsed = JSON.parse(process.env.GCS_SERVICE_ACCOUNT_JSON);
+    if (parsed.client_email && parsed.private_key) {
+      credentials = parsed;
+    }
+  } catch (_) {}
+}
+
+if (!credentials && process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+  try {
+    const parsed = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    if (parsed.client_email && parsed.private_key) {
+      credentials = parsed;
+    }
   } catch (_) {}
 }
 
