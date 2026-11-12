@@ -18,3 +18,4 @@ export const uploadChatMedia = multer({
     files: 1,
   },
 });
+

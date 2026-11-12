@@ -194,3 +194,4 @@ export function verifyMagicBytes(buffer: Buffer, kind: ChatMediaKind, mimeType: 
 
   return true;
 }
+
