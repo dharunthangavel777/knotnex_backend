@@ -1,5 +1,9 @@
 import { Request, Response } from 'express';
 import { ChatService } from '../services/chat.service';
+import { ChatMessagingService } from '../services/chat-messaging.service';
+import { ChatMediaService } from '../services/chat-media.service';
+import { ChatSearchService } from '../services/chat-search.service';
+import { PresenceService } from '../services/presence.service';
 import { ApiResponse } from '../utils/response.util';
 
 export class ChatController {
@@ -86,11 +90,20 @@ export class ChatController {
     try {
       const currentUserId = req.user!.id;
       const targetId = req.params.id;
-      const limit = parseInt((req.query.limit as string) || '50', 10);
-      const messages = await ChatService.getConversationOrDirectMessages(currentUserId, targetId, limit);
-      return ApiResponse.success(res, messages);
+      const limit = parseInt((req.query.limit as string) || '35', 10);
+      const before = (req.query.before as string) || (req.query.cursor as string) || undefined;
+      const after = (req.query.after as string) || undefined;
+      const aroundMessageId = (req.query.aroundMessageId as string) || undefined;
+
+      const data = await ChatService.getConversationOrDirectMessages(currentUserId, targetId, limit, {
+        before,
+        after,
+        aroundMessageId,
+      });
+      return ApiResponse.success(res, data);
     } catch (error: any) {
-      return ApiResponse.error(res, error.message, 500);
+      const code = error.statusCode || 500;
+      return ApiResponse.error(res, error.message, code);
     }
   }
 
@@ -130,11 +143,15 @@ export class ChatController {
         messageType: req.body.messageType,
         mediaUrl: req.body.mediaUrl,
         replyToId: req.body.replyToId || req.body.replyTo,
+        clientMessageId: req.body.clientMessageId,
+        forwardedFromMessageId: req.body.forwardedFromMessageId,
         metadata: req.body.metadata,
+        attachments: req.body.attachments,
       });
       return ApiResponse.created(res, message);
     } catch (error: any) {
-      return ApiResponse.error(res, error.message, 400);
+      const code = error.statusCode || 400;
+      return ApiResponse.error(res, error.message, code);
     }
   }
 
@@ -172,10 +189,13 @@ export class ChatController {
   static async deleteMessage(req: Request, res: Response) {
     try {
       const messageId = req.params.id;
-      const result = await ChatService.deleteMessage(messageId, req.user!.id);
+      const rawScope = (req.query.scope as string) || (req.body?.scope as string) || 'me';
+      const scope: 'me' | 'everyone' = rawScope === 'everyone' ? 'everyone' : 'me';
+      const result = await ChatService.deleteMessage(messageId, req.user!.id, scope);
       return ApiResponse.success(res, result, 'Message deleted');
     } catch (error: any) {
-      return ApiResponse.error(res, error.message, 400);
+      const code = error.statusCode || 400;
+      return ApiResponse.error(res, error.message, code);
     }
   }
 
@@ -242,6 +262,106 @@ export class ChatController {
       const queryText = (req.query.q as string) || '';
       const results = await ChatService.searchUsers(req.user!.id, queryText);
       return ApiResponse.success(res, results);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async toggleMute(req: Request, res: Response) {
+    try {
+      const result = await ChatMessagingService.toggleMute(req.params.id, req.user!.id, {
+        muted: req.body?.muted,
+        mutedUntil: req.body?.mutedUntil,
+      });
+      return ApiResponse.success(res, result, 'Mute preference updated');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, error.statusCode || 400);
+    }
+  }
+
+  static async clearConversation(req: Request, res: Response) {
+    try {
+      const result = await ChatMessagingService.clearConversationForUser(req.params.id, req.user!.id);
+      return ApiResponse.success(res, result, 'Chat cleared');
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, error.statusCode || 400);
+    }
+  }
+
+  static async forwardMessage(req: Request, res: Response) {
+    try {
+      const targetConversationIds = Array.isArray(req.body?.targetConversationIds)
+        ? req.body.targetConversationIds
+        : undefined;
+      const targetRecipientIds = Array.isArray(req.body?.targetRecipientIds)
+        ? req.body.targetRecipientIds
+        : undefined;
+      const results = await ChatService.forwardMessage(req.params.id, req.user!.id, {
+        targetConversationIds,
+        targetRecipientIds,
+        clientMessageIdPrefix: req.body?.clientMessageIdPrefix,
+      });
+      return ApiResponse.created(res, { messages: results });
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, error.statusCode || 400);
+    }
+  }
+
+  static async searchMessages(req: Request, res: Response) {
+    try {
+      const data = await ChatSearchService.searchMessages(req.user!.id, {
+        queryText: (req.query.q as string) || '',
+        conversationId: (req.query.conversationId as string) || undefined,
+        attachmentType: (req.query.type as string) || (req.query.attachmentType as string) || undefined,
+        senderId: (req.query.senderId as string) || undefined,
+        dateFrom: (req.query.dateFrom as string) || undefined,
+        dateTo: (req.query.dateTo as string) || undefined,
+        limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 30,
+        offset: req.query.offset ? parseInt(req.query.offset as string, 10) : 0,
+      });
+      return ApiResponse.success(res, data);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, 500);
+    }
+  }
+
+  static async streamAttachmentContent(req: Request, res: Response) {
+    try {
+      await ChatMediaService.streamAuthorizedAttachment(req, res, req.params.attachmentId, req.user!.id);
+    } catch (error: any) {
+      if (!res.headersSent) {
+        ApiResponse.error(res, error.message, error.statusCode || 500);
+      }
+    }
+  }
+
+  static async getAttachmentSignedUrl(req: Request, res: Response) {
+    try {
+      const result = await ChatMediaService.getAuthorizedAttachmentSignedUrl(
+        req.params.attachmentId,
+        req.user!.id
+      );
+      return ApiResponse.success(res, result);
+    } catch (error: any) {
+      return ApiResponse.error(res, error.message, error.statusCode || 404);
+    }
+  }
+
+  static async streamUploadedAssetContent(req: Request, res: Response) {
+    try {
+      await ChatMediaService.streamAuthorizedAsset(req, res, req.params.assetId, req.user!.id);
+    } catch (error: any) {
+      if (!res.headersSent) {
+        ApiResponse.error(res, error.message, error.statusCode || 500);
+      }
+    }
+  }
+
+  static async getPresence(req: Request, res: Response) {
+    try {
+      const userIds = Array.isArray(req.body?.userIds) ? req.body.userIds : [];
+      const presence = await PresenceService.getPresenceForUsers(req.user!.id, userIds);
+      return ApiResponse.success(res, { presence });
     } catch (error: any) {
       return ApiResponse.error(res, error.message, 500);
     }

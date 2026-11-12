@@ -1,100 +1,157 @@
 import { Server, Socket } from 'socket.io';
 import { ChatService } from '../services/chat.service';
-import { FirestoreIntegration } from '../integrations/firebase/firestore.firebase';
 import { logger } from '../config/logger';
 
 export const registerChatHandlers = (io: Server, socket: Socket) => {
-  const userId = socket.data.userId;
+  // Join specific conversation room after participant authorization check
+  socket.on('join_conversation', async (conversationId: string, ack?: (resp: any) => void) => {
+    const userId = socket.data.userId as string | undefined;
+    if (!userId || !conversationId) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Invalid conversation' });
+      return;
+    }
 
-  socket.on('join_conversation', async (conversationId: string) => {
-    if (userId) {
+    try {
       const isParticipant = await ChatService.verifyParticipant(conversationId, userId);
       if (!isParticipant) {
         socket.emit('chat_error', { message: 'Unauthorized conversation access' });
+        if (typeof ack === 'function') ack({ ok: false, error: 'Unauthorized conversation access' });
         return;
       }
+
+      socket.join(`conversation_${conversationId}`);
+      if (typeof ack === 'function') ack({ ok: true, conversationId });
+    } catch (error: any) {
+      logger.error(`[Socket] Error joining conversation ${conversationId}:`, error);
+      if (typeof ack === 'function') ack({ ok: false, error: error.message });
     }
-    socket.join(`conversation_${conversationId}`);
-    logger.debug(`User ${userId} joined room conversation_${conversationId}`);
   });
 
   socket.on('leave_conversation', (conversationId: string) => {
-    socket.leave(`conversation_${conversationId}`);
-    logger.debug(`User ${userId} left room conversation_${conversationId}`);
-  });
-
-  socket.on('send_message', async (data: {
-    conversationId?: string;
-    receiverId?: string;
-    recipientId?: string;
-    content: string;
-    messageType?: any;
-    mediaUrl?: string;
-    replyToId?: any;
-    replyTo?: any;
-    metadata?: any;
-  }) => {
-    try {
-      if (!userId) {
-        socket.emit('chat_error', { message: 'Authentication required' });
-        return;
-      }
-
-      await ChatService.sendMessage({
-        conversationId: data.conversationId,
-        senderId: userId,
-        recipientId: data.receiverId || data.recipientId,
-        content: data.content,
-        messageType: data.messageType,
-        mediaUrl: data.mediaUrl,
-        replyToId: data.replyToId || data.replyTo,
-        metadata: data.metadata,
-      });
-      // Broadcast is handled centrally within ChatService.sendMessage to avoid duplicates
-    } catch (error: any) {
-      socket.emit('chat_error', { message: error.message });
+    if (conversationId) {
+      socket.leave(`conversation_${conversationId}`);
     }
   });
 
-  socket.on('message_read', async (data: { conversationId: string; messageId?: string }) => {
+  // Real-time idempotent message send with acknowledgement callback
+  socket.on(
+    'send_message',
+    async (
+      data: {
+        conversationId?: string;
+        recipientId?: string;
+        receiverId?: string;
+        content?: string;
+        messageType?: string;
+        mediaUrl?: string;
+        replyToId?: string;
+        clientMessageId?: string;
+        forwardedFromMessageId?: string;
+        metadata?: Record<string, any>;
+        attachments?: any[];
+      },
+      ack?: (resp: { ok: boolean; message?: any; error?: string }) => void
+    ) => {
+      try {
+        const senderId = socket.data.userId as string | undefined;
+        if (!senderId) {
+          socket.emit('chat_error', { message: 'Authentication required' });
+          if (typeof ack === 'function') ack({ ok: false, error: 'Authentication required' });
+          return;
+        }
+
+        const msg = await ChatService.sendMessage({
+          conversationId: data.conversationId,
+          senderId,
+          recipientId: data.recipientId || data.receiverId,
+          content: data.content || '',
+          messageType: data.messageType,
+          mediaUrl: data.mediaUrl,
+          replyToId: data.replyToId,
+          clientMessageId: data.clientMessageId,
+          forwardedFromMessageId: data.forwardedFromMessageId,
+          metadata: data.metadata,
+          attachments: data.attachments,
+        });
+
+        if (typeof ack === 'function') {
+          ack({ ok: true, message: msg });
+        }
+      } catch (error: any) {
+        socket.emit('chat_error', {
+          message: error.message,
+          clientMessageId: data?.clientMessageId,
+        });
+        if (typeof ack === 'function') {
+          ack({ ok: false, error: error.message });
+        }
+      }
+    }
+  );
+
+  // Mark messages as read
+  socket.on('message_read', async (data: { conversationId?: string; messageId?: string }) => {
     try {
-      if (!userId || !data.conversationId) return;
+      const userId = socket.data.userId as string | undefined;
+      if (!userId || !data?.conversationId) return;
+
       if (data.messageId) {
         await ChatService.markMessageRead(data.conversationId, data.messageId, userId);
       } else {
         await ChatService.markConversationAsRead(data.conversationId, userId);
       }
-    } catch (e: any) {
-      logger.warn('[Socket message_read] Error: ' + e.message);
+    } catch (error: any) {
+      logger.error(`[Socket] Error in message_read:`, error);
     }
   });
 
-  socket.on('message_delivered', async (data: { messageId: string }) => {
+  // Acknowledge message delivery
+  socket.on('message_delivered', async (data: { messageId?: string }) => {
     try {
-      if (!userId || !data.messageId) return;
+      const userId = socket.data.userId as string | undefined;
+      if (!userId || !data?.messageId) return;
       await ChatService.markMessageDelivered(data.messageId, userId);
-    } catch (e: any) {
-      logger.warn('[Socket message_delivered] Error: ' + e.message);
+    } catch (error: any) {
+      logger.error(`[Socket] Error in message_delivered:`, error);
     }
   });
 
-  socket.on('typing_start', async (conversationId: string) => {
-    if (!conversationId) return;
-    await FirestoreIntegration.setTypingIndicator(conversationId, userId, true).catch(() => {});
-    socket.to(`conversation_${conversationId}`).emit('user_typing', {
-      conversationId,
-      userId,
-      isTyping: true,
-    });
+  // Authorized typing indicators routed directly to peer's user room
+  socket.on('typing_start', async (payload: string | { conversationId?: string; recipientId?: string }) => {
+    try {
+      const userId = socket.data.userId as string | undefined;
+      if (!userId) return;
+      const conversationId = typeof payload === 'string' ? payload : payload?.conversationId;
+      if (!conversationId) return;
+
+      const peerId = await ChatService.getAuthorizedPeerId(conversationId, userId);
+      if (!peerId) return;
+
+      io.to(`user:${peerId}`).emit('typing_start', {
+        conversationId,
+        userId,
+      });
+    } catch (error: any) {
+      logger.warn('[Socket] typing_start error: ' + error.message);
+    }
   });
 
-  socket.on('typing_stop', async (conversationId: string) => {
-    if (!conversationId) return;
-    await FirestoreIntegration.setTypingIndicator(conversationId, userId, false).catch(() => {});
-    socket.to(`conversation_${conversationId}`).emit('user_typing', {
-      conversationId,
-      userId,
-      isTyping: false,
-    });
+  socket.on('typing_stop', async (payload: string | { conversationId?: string; recipientId?: string }) => {
+    try {
+      const userId = socket.data.userId as string | undefined;
+      if (!userId) return;
+      const conversationId = typeof payload === 'string' ? payload : payload?.conversationId;
+      if (!conversationId) return;
+
+      const peerId = await ChatService.getAuthorizedPeerId(conversationId, userId);
+      if (!peerId) return;
+
+      io.to(`user:${peerId}`).emit('typing_stop', {
+        conversationId,
+        userId,
+      });
+    } catch (error: any) {
+      logger.warn('[Socket] typing_stop error: ' + error.message);
+    }
   });
 };
