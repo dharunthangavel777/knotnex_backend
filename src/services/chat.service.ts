@@ -4,6 +4,8 @@ import { getSocketIO } from '../websockets/socket.server';
 import { NotificationService } from './notification.service';
 import { firestore } from '../config/firebase';
 import { COLLECTIONS } from '../config/firestore';
+import { AttachmentInput, ChatMessagingService } from './chat-messaging.service';
+import { PresenceService } from './presence.service';
 
 export interface SendMessagePayload {
   conversationId?: string;
@@ -13,7 +15,10 @@ export interface SendMessagePayload {
   messageType?: string;
   mediaUrl?: string;
   replyToId?: string;
+  clientMessageId?: string;
+  forwardedFromMessageId?: string;
   metadata?: any;
+  attachments?: AttachmentInput[];
 }
 
 export class ChatService {
@@ -120,7 +125,12 @@ export class ChatService {
             c.initiator_id,
             ($1 = ANY(COALESCE(c.pinned_by, '{}'))) AS is_pinned,
             ($1 = ANY(COALESCE(c.archived_by, '{}'))) AS is_archived,
-            ($1 = ANY(COALESCE(c.muted_by, '{}'))) AS is_muted,
+            (
+              ($1 = ANY(COALESCE(c.muted_by, '{}')))
+              OR (COALESCE(cp.is_muted, FALSE) = TRUE AND (cp.muted_until IS NULL OR cp.muted_until > NOW()))
+            ) AS is_muted,
+            cp.muted_until,
+            cp.cleared_before_at,
             c.last_message,
             c.last_message_at,
             c.last_message_by,
@@ -130,25 +140,30 @@ export class ChatService {
               WHEN c.participant_one = $1 THEN c.participant_two 
               ELSE c.participant_one 
             END AS other_user_id,
-            CASE 
-              WHEN c.participant_one = $1 THEN c.unread_count_one 
-              ELSE c.unread_count_two 
-            END AS unread_count,
+            COALESCE(
+              cp.unread_count,
+              CASE WHEN c.participant_one = $1 THEN c.unread_count_one ELSE c.unread_count_two END,
+              0
+            ) AS unread_count,
             u.full_name AS other_user_name,
             COALESCE(u.username, SPLIT_PART(u.email, '@', 1)) AS other_user_username,
             u.avatar_url AS other_user_avatar,
             u.role AS other_user_role,
+            COALESCE(u.is_verified, FALSE) AS other_user_verified,
             up.bio AS other_user_bio,
             org.name AS other_org_name,
-            org.logo_url AS other_org_logo
+            org.logo_url AS other_org_logo,
+            COALESCE(org.is_verified, FALSE) AS other_org_verified
          FROM conversations c
          JOIN users u ON u.id = (
            CASE WHEN c.participant_one = $1 THEN c.participant_two ELSE c.participant_one END
          )
+         LEFT JOIN conversation_participants cp ON cp.conversation_id = c.id AND cp.user_id = $1
          LEFT JOIN user_profiles up ON up.user_id = u.id
          LEFT JOIN organizations org ON org.owner_id = u.id
          WHERE (c.participant_one = $1 OR c.participant_two = $1)
            AND NOT ($1 = ANY(COALESCE(c.deleted_by, '{}')))
+           AND COALESCE(cp.is_deleted, FALSE) = FALSE
            AND (
              ($2 = TRUE AND ($1 = ANY(COALESCE(c.archived_by, '{}'))))
              OR ($2 = FALSE AND NOT ($1 = ANY(COALESCE(c.archived_by, '{}'))))
@@ -159,9 +174,19 @@ export class ChatService {
       );
 
       if (res.rows && res.rows.length > 0) {
+        const peerIds = res.rows.map((r) => String(r.other_user_id));
+        const presenceMap = await PresenceService.getPresenceForUsers(uId, peerIds);
+
         return res.rows.map((row) => {
+          const peerId = String(row.other_user_id);
+          const presence = presenceMap[peerId];
           const displayName = row.other_org_name || row.other_user_name || 'User';
           const avatarUrl = row.other_org_logo || row.other_user_avatar || '';
+          const isVerified = Boolean(row.other_org_verified || row.other_user_verified);
+          const clearedBefore = row.cleared_before_at ? new Date(row.cleared_before_at).getTime() : null;
+          const lastMsgAt = row.last_message_at ? new Date(row.last_message_at).getTime() : null;
+          const hideClearedPreview = clearedBefore !== null && lastMsgAt !== null && lastMsgAt <= clearedBefore;
+
           const otherUser = {
             id: row.other_user_id,
             name: displayName,
@@ -171,8 +196,15 @@ export class ChatService {
             photoUrl: avatarUrl,
             bio: row.other_user_bio || 'KnotNex Member',
             role: row.other_user_role,
-            is_online: true,
-            is_verified: true,
+            is_online: presence?.isOnline ?? false,
+            isOnline: presence?.isOnline ?? false,
+            last_seen_at: presence?.lastSeenAt ?? null,
+            lastSeenAt: presence?.lastSeenAt ?? null,
+            show_online_status: presence?.showOnlineStatus ?? true,
+            show_last_seen: presence?.showLastSeen ?? true,
+            read_receipts_enabled: presence?.readReceiptsEnabled ?? true,
+            is_verified: isVerified,
+            isVerified,
           };
 
           return {
@@ -185,10 +217,12 @@ export class ChatService {
             isPinned: row.is_pinned,
             is_archived: row.is_archived,
             isArchived: row.is_archived,
-            is_muted: row.is_muted,
-            isMuted: row.is_muted,
-            last_message: row.last_message || '',
-            lastMessage: row.last_message || '',
+            is_muted: Boolean(row.is_muted),
+            isMuted: Boolean(row.is_muted),
+            muted_until: row.muted_until,
+            mutedUntil: row.muted_until,
+            last_message: hideClearedPreview ? '' : row.last_message || '',
+            lastMessage: hideClearedPreview ? '' : row.last_message || '',
             last_message_at: row.last_message_at,
             lastMessageAt: row.last_message_at,
             last_message_by: row.last_message_by,
@@ -239,9 +273,11 @@ export class ChatService {
             COALESCE(u.username, SPLIT_PART(u.email, '@', 1)) AS other_user_username,
             u.avatar_url AS other_user_avatar,
             u.role AS other_user_role,
+            COALESCE(u.is_verified, FALSE) AS other_user_verified,
             up.bio AS other_user_bio,
             org.name AS other_org_name,
-            org.logo_url AS other_org_logo
+            org.logo_url AS other_org_logo,
+            COALESCE(org.is_verified, FALSE) AS other_org_verified
          FROM conversations c
          JOIN users u ON u.id = (
            CASE WHEN c.participant_one = $1 THEN c.participant_two ELSE c.participant_one END
@@ -256,9 +292,15 @@ export class ChatService {
         [uId]
       );
 
+      const peerIds = (res.rows || []).map((r) => String(r.other_user_id));
+      const presenceMap = await PresenceService.getPresenceForUsers(uId, peerIds);
+
       return (res.rows || []).map((row) => {
+        const peerId = String(row.other_user_id);
+        const presence = presenceMap[peerId];
         const displayName = row.other_org_name || row.other_user_name || 'User';
         const avatarUrl = row.other_org_logo || row.other_user_avatar || '';
+        const isVerified = Boolean(row.other_org_verified || row.other_user_verified);
         const otherUser = {
           id: row.other_user_id,
           name: displayName,
@@ -268,8 +310,12 @@ export class ChatService {
           photoUrl: avatarUrl,
           bio: row.other_user_bio || 'KnotNex Member',
           role: row.other_user_role,
-          is_online: true,
-          is_verified: true,
+          is_online: presence?.isOnline ?? false,
+          isOnline: presence?.isOnline ?? false,
+          last_seen_at: presence?.lastSeenAt ?? null,
+          lastSeenAt: presence?.lastSeenAt ?? null,
+          is_verified: isVerified,
+          isVerified,
         };
 
         return {
@@ -297,138 +343,38 @@ export class ChatService {
   }
 
   /**
-   * Retrieves messages for a conversation or target user with full metadata.
+   * Retrieves paginated messages for a conversation or target user with full metadata & attachments.
    */
   static async getConversationOrDirectMessages(
     currentUserId: string,
     targetId: string,
-    limit: number = 100,
-    offset: number = 0
+    limit: number = 35,
+    offsetOrOpts: number | { before?: string; after?: string; aroundMessageId?: string } = {}
   ) {
     try {
       const uId = (await this.resolveUserUuid(currentUserId)) || currentUserId;
-      let conversationId: string | null = null;
-      let convStatus = 'ACCEPTED';
-      let convInitiatorId: string | null = null;
-
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-      // 1. Check if targetId is an existing conversation ID
-      if (uuidRegex.test(targetId)) {
-        const convById = await query(
-          `SELECT id, participant_one, participant_two, status, initiator_id 
-           FROM conversations 
-           WHERE id = $1 AND (participant_one = $2 OR participant_two = $2)
-           LIMIT 1`,
-          [targetId, uId]
-        );
-        if (convById.rowCount && convById.rowCount > 0) {
-          const row = convById.rows[0];
-          conversationId = row.id;
-          convStatus = row.status || 'ACCEPTED';
-          convInitiatorId = row.initiator_id;
-        }
+      let resolvedTarget = targetId;
+      if (!uuidRegex.test(targetId)) {
+        resolvedTarget = (await this.resolveUserUuid(targetId)) || targetId;
       }
 
-      // 2. If not found by conversation ID, targetId is another user's identifier
-      if (!conversationId) {
-        const otherUserId = (await this.resolveUserUuid(targetId)) || targetId;
-        const conv = await this.startConversation(uId, otherUserId);
-        conversationId = conv.id;
-        convStatus = conv.status || 'ACCEPTED';
-        convInitiatorId = conv.initiator_id;
-      }
-
-      // 3. Fetch persistent messages from PostgreSQL Cloud SQL
-      const msgRes = await query(
-        `SELECT 
-            m.id,
-            m.conversation_id,
-            m.sender_id,
-            m.receiver_id,
-            m.content,
-            m.message_type,
-            m.media_url,
-            m.is_read,
-            m.read_at,
-            m.is_delivered,
-            m.delivered_at,
-            m.is_deleted,
-            m.reply_to_id,
-            m.metadata,
-            m.created_at,
-            r.content AS reply_to_content,
-            ru.full_name AS reply_to_sender_name,
-            COALESCE(
-              (
-                SELECT jsonb_object_agg(mr.user_id, mr.emoji)
-                FROM message_reactions mr
-                WHERE mr.message_id = m.id
-              ),
-              '{}'::jsonb
-            ) AS reactions
-         FROM messages m
-         LEFT JOIN messages r ON r.id = m.reply_to_id
-         LEFT JOIN users ru ON ru.id = r.sender_id
-         WHERE m.conversation_id = $1 AND m.is_deleted = FALSE
-         ORDER BY m.created_at ASC
-         LIMIT $2 OFFSET $3`,
-        [conversationId, limit, offset]
-      );
-
-      const formattedMessages = msgRes.rows.map((row) => {
-        const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : (row.metadata || {});
-        return {
-          id: row.id,
-          conversationId: row.conversation_id,
-          conversation_id: row.conversation_id,
-          senderId: row.sender_id,
-          sender_id: row.sender_id,
-          receiverId: row.receiver_id,
-          receiver_id: row.receiver_id,
-          content: row.content,
-          messageType: row.message_type || 'text',
-          message_type: row.message_type || 'text',
-          mediaUrl: row.media_url,
-          media_url: row.media_url,
-          isRead: row.is_read,
-          is_read: row.is_read,
-          readAt: row.read_at,
-          isDelivered: row.is_delivered,
-          is_delivered: row.is_delivered,
-          deliveredAt: row.delivered_at,
-          replyToId: row.reply_to_id,
-          reply_to_id: row.reply_to_id,
-          replyToContent: row.reply_to_content,
-          replyToSenderName: row.reply_to_sender_name,
-          reactions: row.reactions || {},
-          metadata: meta,
-          sharedTitle: meta.sharedTitle,
-          sharedSubtitle: meta.sharedSubtitle,
-          sharedAvatar: meta.sharedAvatar,
-          sharedId: meta.sharedId,
-          sharedActionText: meta.sharedActionText,
-          sharedData: meta.sharedData,
-          fileName: meta.fileName,
-          fileSize: meta.fileSize,
-          fileExtension: meta.fileExtension,
-          timestamp: row.created_at,
-          created_at: row.created_at,
-        };
+      const opts = typeof offsetOrOpts === 'object' && offsetOrOpts !== null ? offsetOrOpts : {};
+      return await ChatMessagingService.getConversationMessagesPaginated(uId, resolvedTarget, {
+        limit,
+        before: opts.before,
+        after: opts.after,
+        aroundMessageId: opts.aroundMessageId,
       });
-
-      return {
-        conversationId,
-        status: convStatus,
-        initiatorId: convInitiatorId,
-        messages: formattedMessages,
-      };
     } catch (err: any) {
+      if (err?.statusCode === 403) throw err;
       logger.error('[ChatService.getConversationOrDirectMessages] SQL error, attempting Firestore fallback: ' + err.message);
       return {
         conversationId: targetId,
         status: 'ACCEPTED',
         initiatorId: null,
+        hasMore: false,
         messages: await this.getFirestoreConversationMessages(targetId, limit),
       };
     }
@@ -509,191 +455,76 @@ export class ChatService {
   }
 
   /**
-   * Sends a message, persists to PostgreSQL Cloud SQL, broadcasts via Socket.IO, and triggers FCM.
+   * Sends a message idempotently, persists attachments, broadcasts once per socket, and triggers mute-aware FCM.
    */
   static async sendMessage(data: SendMessagePayload) {
     const senderId = (await this.resolveUserUuid(data.senderId)) || data.senderId;
-    let recipientId = data.recipientId ? (await this.resolveUserUuid(data.recipientId)) || data.recipientId : undefined;
-    let conversationId = data.conversationId;
+    const recipientId = data.recipientId
+      ? (await this.resolveUserUuid(data.recipientId)) || data.recipientId
+      : undefined;
 
-    // 1. Resolve or create conversation
-    if (!conversationId && recipientId) {
-      const conv = await this.startConversation(senderId, recipientId);
-      conversationId = conv.id;
-    } else if (conversationId && !recipientId) {
-      const convRes = await query(
-        `SELECT participant_one, participant_two FROM conversations WHERE id = $1 LIMIT 1`,
-        [conversationId]
-      );
-      if (convRes.rowCount && convRes.rowCount > 0) {
-        const row = convRes.rows[0];
-        recipientId = row.participant_one === senderId ? row.participant_two : row.participant_one;
+    const { message } = await ChatMessagingService.sendMessageIdempotent(
+      {
+        conversationId: data.conversationId,
+        senderId,
+        recipientId,
+        content: data.content || '',
+        messageType: data.messageType,
+        mediaUrl: data.mediaUrl,
+        replyToId: data.replyToId,
+        clientMessageId: data.clientMessageId,
+        forwardedFromMessageId: data.forwardedFromMessageId,
+        metadata: data.metadata,
+        attachments: data.attachments,
+      },
+      {
+        onNewMessagePush: async (p) => {
+          await this.dispatchMessageNotification(p.senderId, p.recipientId, p.conversationId, {
+            id: p.messageId,
+            content: p.content,
+            message_type: p.messageType,
+          });
+        },
       }
-    }
-
-    if (!conversationId || !recipientId) {
-      throw new Error('Valid conversationId and recipientId are required');
-    }
-
-    // 2. Enforce block check
-    const blockCheck = await query(
-      `SELECT 1 FROM blocked_users 
-       WHERE (blocker_id = $1 AND blocked_id = $2) 
-          OR (blocker_id = $2 AND blocked_id = $1)
-       LIMIT 1`,
-      [senderId, recipientId]
     );
 
-    if (blockCheck.rowCount && blockCheck.rowCount > 0) {
-      throw new Error('Cannot send message: User communication is restricted');
+    return message;
+  }
+
+  static async forwardMessage(
+    sourceMessageId: string,
+    userId: string,
+    params: {
+      targetConversationIds?: string[];
+      targetRecipientIds?: string[];
+      clientMessageIdPrefix?: string;
     }
+  ) {
+    const uId = (await this.resolveUserUuid(userId)) || userId;
+    const resolvedRecipients = params.targetRecipientIds
+      ? await Promise.all(params.targetRecipientIds.map(async (id) => (await this.resolveUserUuid(id)) || id))
+      : undefined;
 
-    // Check conversation status
-    const convRow = await query(
-      `SELECT id, participant_one, participant_two, status, initiator_id FROM conversations WHERE id = $1 LIMIT 1`,
-      [conversationId]
-    );
-    if (!convRow.rowCount || convRow.rowCount === 0) {
-      throw new Error('Conversation not found');
-    }
-    const conv = convRow.rows[0];
-
-    if (conv.status === 'REJECTED') {
-      throw new Error('Cannot send message: This conversation request was declined.');
-    }
-    if (conv.status === 'BLOCKED') {
-      throw new Error('Cannot send message: Communication is restricted.');
-    }
-
-    // If recipient is replying to a pending request, automatically ACCEPT it
-    if (conv.status === 'REQUEST_PENDING' && conv.initiator_id && conv.initiator_id !== senderId) {
-      await query(`UPDATE conversations SET status = 'ACCEPTED', updated_at = NOW() WHERE id = $1`, [conversationId]);
-      conv.status = 'ACCEPTED';
-      const io = getSocketIO();
-      io?.to(`user:${conv.initiator_id}`).emit('request_accepted', { conversationId });
-      io?.to(`conversation_${conversationId}`).emit('request_accepted', { conversationId });
-      io?.to(`user:${senderId}`).emit('request_accepted', { conversationId });
-    }
-
-    // 3. Persist to PostgreSQL messages table
-    const metaObj = data.metadata || {};
-    const msgRes = await query(
-      `INSERT INTO messages (
-          conversation_id, sender_id, receiver_id, content, 
-          message_type, media_url, reply_to_id, metadata, created_at
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-       RETURNING *`,
-      [
-        conversationId,
-        senderId,
-        recipientId,
-        data.content || '',
-        data.messageType || 'text',
-        data.mediaUrl || null,
-        data.replyToId || null,
-        JSON.stringify(metaObj),
-      ]
-    );
-
-    const savedMessage = msgRes.rows[0];
-
-    // 4. Update conversation metadata and unread counter (and restore from deleted_by)
-    const previewContent = data.content
-      ? data.content
-      : data.messageType === 'reel'
-      ? `Shared a reel: ${metaObj.sharedTitle || 'Reel'}`
-      : data.messageType
-      ? `[${data.messageType}]`
-      : 'Attachment';
-
-    await query(
-      `UPDATE conversations
-       SET last_message = $1,
-           last_message_at = NOW(),
-           last_message_by = $2,
-           deleted_by = '{}',
-           unread_count_one = CASE WHEN participant_one = $3 THEN unread_count_one + 1 ELSE unread_count_one END,
-           unread_count_two = CASE WHEN participant_two = $3 THEN unread_count_two + 1 ELSE unread_count_two END,
-           updated_at = NOW()
-       WHERE id = $4`,
-      [
-        previewContent,
-        senderId,
-        recipientId,
-        conversationId,
-      ]
-    );
-
-    // 5. Construct complete client payload
-    const messagePayload = {
-      id: savedMessage.id,
-      conversationId: conversationId,
-      conversation_id: conversationId,
-      senderId: senderId,
-      sender_id: senderId,
-      receiverId: recipientId,
-      receiver_id: recipientId,
-      content: savedMessage.content,
-      messageType: savedMessage.message_type,
-      message_type: savedMessage.message_type,
-      mediaUrl: savedMessage.media_url,
-      media_url: savedMessage.media_url,
-      replyToId: savedMessage.reply_to_id,
-      reply_to_id: savedMessage.reply_to_id,
-      isRead: false,
-      is_read: false,
-      isDelivered: false,
-      is_delivered: false,
-      reactions: {},
-      metadata: metaObj,
-      sharedTitle: metaObj.sharedTitle,
-      sharedSubtitle: metaObj.sharedSubtitle,
-      sharedAvatar: metaObj.sharedAvatar,
-      sharedId: metaObj.sharedId,
-      sharedActionText: metaObj.sharedActionText,
-      sharedData: metaObj.sharedData,
-      fileName: metaObj.fileName,
-      fileSize: metaObj.fileSize,
-      fileExtension: metaObj.fileExtension,
-      timestamp: savedMessage.created_at,
-      created_at: savedMessage.created_at,
-    };
-
-    // 6. Real-time broadcast via Socket.IO
-    const io = getSocketIO();
-    if (io) {
-      io.to(`conversation_${conversationId}`).emit('new_message', messagePayload);
-      io.to(`user:${recipientId}`).emit('new_message', messagePayload);
-      if (conv.status === 'REQUEST_PENDING') {
-        io.to(`user:${recipientId}`).emit('message_request', {
-          conversationId,
-          message: messagePayload,
-          senderId: senderId,
+    return ChatMessagingService.forwardMessage(
+      sourceMessageId,
+      uId,
+      {
+        ...params,
+        targetRecipientIds: resolvedRecipients,
+      },
+      async (p) => {
+        await this.dispatchMessageNotification(p.senderId, p.recipientId, p.conversationId, {
+          id: p.messageId,
+          content: p.content,
+          message_type: p.messageType,
         });
       }
-      io.to(`user:${recipientId}`).emit('conversation_updated', {
-        conversationId,
-        lastMessage: previewContent,
-        lastMessageAt: messagePayload.timestamp,
-        senderId: senderId,
-        status: conv.status,
-      });
-      io.to(`user:${senderId}`).emit('conversation_updated', {
-        conversationId,
-        lastMessage: previewContent,
-        lastMessageAt: messagePayload.timestamp,
-        senderId: senderId,
-        status: conv.status,
-      });
-    }
+    );
+  }
 
-    // 7. Centralized Push Notification & FCM dispatch
-    this.dispatchMessageNotification(senderId, recipientId, conversationId, savedMessage).catch((e) => {
-      logger.warn('[ChatService.sendMessage] Push notification dispatch notice: ' + e.message);
-    });
-
-    return messagePayload;
+  static async getAuthorizedPeerId(conversationId: string, userId: string): Promise<string | null> {
+    const uId = (await this.resolveUserUuid(userId)) || userId;
+    return ChatMessagingService.getAuthorizedPeerId(conversationId, uId);
   }
 
   /**
@@ -702,42 +533,7 @@ export class ChatService {
   static async markConversationAsRead(conversationId: string, userId: string) {
     try {
       const uId = (await this.resolveUserUuid(userId)) || userId;
-      const updateRes = await query(
-        `UPDATE messages 
-         SET is_read = TRUE, read_at = NOW(), is_delivered = TRUE, delivered_at = COALESCE(delivered_at, NOW())
-         WHERE conversation_id = $1 AND receiver_id = $2 AND is_read = FALSE
-         RETURNING id, sender_id`,
-        [conversationId, uId]
-      );
-
-      await query(
-        `UPDATE conversations
-         SET unread_count_one = CASE WHEN participant_one = $1 THEN 0 ELSE unread_count_one END,
-             unread_count_two = CASE WHEN participant_two = $1 THEN 0 ELSE unread_count_two END,
-             updated_at = NOW()
-         WHERE id = $2`,
-        [uId, conversationId]
-      );
-
-      // Real-time broadcast
-      const io = getSocketIO();
-      if (io && updateRes.rowCount && updateRes.rowCount > 0) {
-        const senderId = updateRes.rows[0]?.sender_id;
-        io.to(`conversation_${conversationId}`).emit('message_read', {
-          conversationId,
-          readerId: uId,
-          readAt: new Date(),
-        });
-        if (senderId) {
-          io.to(`user:${senderId}`).emit('message_read', {
-            conversationId,
-            readerId: uId,
-            readAt: new Date(),
-          });
-        }
-      }
-
-      return { success: true, count: updateRes.rowCount };
+      return await ChatMessagingService.markConversationAsRead(conversationId, uId);
     } catch (e: any) {
       logger.error('[ChatService.markConversationAsRead] error: ' + e.message);
       return { success: false, error: e.message };
@@ -751,8 +547,12 @@ export class ChatService {
     try {
       const uId = (await this.resolveUserUuid(userId)) || userId;
       const res = await query(
-        `UPDATE messages 
-         SET is_read = TRUE, read_at = NOW(), is_delivered = TRUE, delivered_at = COALESCE(delivered_at, NOW())
+        `UPDATE messages
+         SET is_read = TRUE,
+             read_at = COALESCE(read_at, NOW()),
+             is_delivered = TRUE,
+             delivered_at = COALESCE(delivered_at, NOW()),
+             send_status = 'seen'
          WHERE id = $1 AND receiver_id = $2
          RETURNING id, sender_id, conversation_id`,
         [messageId, uId]
@@ -760,19 +560,17 @@ export class ChatService {
 
       if (res.rowCount && res.rowCount > 0) {
         const row = res.rows[0];
+        const [viewerPrivacy, peerPrivacy] = await Promise.all([
+          PresenceService.getPrivacySettings(uId),
+          PresenceService.getPrivacySettings(String(row.sender_id)),
+        ]);
         const io = getSocketIO();
-        if (io) {
-          io.to(`conversation_${row.conversation_id}`).emit('message_read', {
-            conversationId: row.conversation_id,
-            messageId: row.id,
-            readerId: uId,
-            readAt: new Date(),
-          });
+        if (io && viewerPrivacy.readReceiptsEnabled && peerPrivacy.readReceiptsEnabled) {
           io.to(`user:${row.sender_id}`).emit('message_read', {
             conversationId: row.conversation_id,
             messageId: row.id,
             readerId: uId,
-            readAt: new Date(),
+            readAt: new Date().toISOString(),
           });
         }
       }
@@ -790,63 +588,18 @@ export class ChatService {
   static async markMessageDelivered(messageId: string, userId: string) {
     try {
       const uId = (await this.resolveUserUuid(userId)) || userId;
-      const res = await query(
-        `UPDATE messages
-         SET is_delivered = TRUE, delivered_at = NOW()
-         WHERE id = $1 AND receiver_id = $2 AND is_delivered = FALSE
-         RETURNING id, sender_id, conversation_id`,
-        [messageId, uId]
-      );
-
-      if (res.rowCount && res.rowCount > 0) {
-        const row = res.rows[0];
-        const io = getSocketIO();
-        if (io) {
-          io.to(`user:${row.sender_id}`).emit('message_delivered', {
-            messageId: row.id,
-            conversationId: row.conversation_id,
-            deliveredAt: new Date(),
-          });
-        }
-      }
-
-      return { success: true };
+      return await ChatMessagingService.markMessageDelivered(messageId, uId);
     } catch (e: any) {
       return { success: false, error: e.message };
     }
   }
 
   /**
-   * Soft-deletes a message (Unsend).
+   * Deletes a message either for the calling user (`me`) or for everyone (`everyone`).
    */
-  static async deleteMessage(messageId: string, userId: string) {
+  static async deleteMessage(messageId: string, userId: string, scope: 'me' | 'everyone' = 'me') {
     const uId = (await this.resolveUserUuid(userId)) || userId;
-    const res = await query(
-      `UPDATE messages
-       SET is_deleted = TRUE, deleted_at = NOW(), content = 'This message was deleted'
-       WHERE id = $1 AND sender_id = $2
-       RETURNING id, conversation_id, receiver_id`,
-      [messageId, uId]
-    );
-
-    if (res.rowCount === 0) {
-      throw new Error('Message not found or unauthorized to delete');
-    }
-
-    const row = res.rows[0];
-    const io = getSocketIO();
-    if (io) {
-      io.to(`conversation_${row.conversation_id}`).emit('message_deleted', {
-        messageId: row.id,
-        conversationId: row.conversation_id,
-      });
-      io.to(`user:${row.receiver_id}`).emit('message_deleted', {
-        messageId: row.id,
-        conversationId: row.conversation_id,
-      });
-    }
-
-    return { success: true, messageId: row.id };
+    return ChatMessagingService.deleteMessage(messageId, uId, scope);
   }
 
   /**
@@ -884,12 +637,18 @@ export class ChatService {
     );
     const reactions = reactionsRes.rows[0]?.reactions || {};
 
-    const msgRes = await query(`SELECT conversation_id FROM messages WHERE id = $1`, [messageId]);
+    const msgRes = await query(
+      `SELECT m.conversation_id, c.participant_one, c.participant_two
+       FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.id = $1`,
+      [messageId]
+    );
     if (msgRes.rowCount && msgRes.rowCount > 0) {
-      const convId = msgRes.rows[0].conversation_id;
+      const { conversation_id: convId, participant_one: p1, participant_two: p2 } = msgRes.rows[0];
       const io = getSocketIO();
       if (io) {
-        io.to(`conversation_${convId}`).emit('reaction_updated', {
+        io.to(`user:${p1}`).to(`user:${p2}`).emit('reaction_updated', {
           messageId,
           conversationId: convId,
           reactions,
@@ -964,9 +723,21 @@ export class ChatService {
     try {
       const uId = (await this.resolveUserUuid(userId)) || userId;
       const res = await query(
-        `SELECT COUNT(*) as count 
-         FROM messages 
-         WHERE receiver_id = $1 AND is_read = FALSE AND is_deleted = FALSE`,
+        `SELECT COUNT(*) as count
+         FROM messages m
+         JOIN conversations c ON c.id = m.conversation_id
+         LEFT JOIN conversation_participants cp ON cp.conversation_id = c.id AND cp.user_id = $1
+         WHERE m.receiver_id = $1
+           AND COALESCE(m.is_read, FALSE) = FALSE
+           AND m.read_at IS NULL
+           AND COALESCE(m.deleted_for_everyone, m.is_deleted, FALSE) = FALSE
+           AND NOT ($1 = ANY(COALESCE(c.deleted_by, '{}')))
+           AND COALESCE(cp.is_deleted, FALSE) = FALSE
+           AND (cp.cleared_before_at IS NULL OR m.created_at > cp.cleared_before_at)
+           AND NOT EXISTS (
+             SELECT 1 FROM message_user_visibility muv
+             WHERE muv.message_id = m.id AND muv.user_id = $1
+           )`,
         [uId]
       );
       return parseInt(res.rows[0]?.count || '0', 10);
@@ -988,9 +759,11 @@ export class ChatService {
          COALESCE(u.username, SPLIT_PART(u.email, '@', 1)) AS username, 
          u.avatar_url, 
          u.role,
+         COALESCE(u.is_verified, FALSE) AS user_verified,
          up.bio,
          org.name as org_name,
-         org.logo_url as org_logo
+         org.logo_url as org_logo,
+         COALESCE(org.is_verified, FALSE) AS org_verified
        FROM users u
        LEFT JOIN user_profiles up ON up.user_id = u.id
        LEFT JOIN organizations org ON org.owner_id = u.id
@@ -1006,18 +779,29 @@ export class ChatService {
       [uId, term]
     );
 
-    return res.rows.map((row) => ({
-      id: row.id,
-      name: row.org_name || row.full_name || 'User',
-      username: row.username || 'user',
-      photoUrl: row.org_logo || row.avatar_url || '',
-      avatar_url: row.org_logo || row.avatar_url || '',
-      bio: row.bio || 'KnotNex Community Member',
-      role: row.role || 'user',
-      isOrganization: !!row.org_name || row.role === 'org',
-      is_online: true,
-      is_verified: true,
-    }));
+    const peerIds = res.rows.map((r) => String(r.id));
+    const presenceMap = await PresenceService.getPresenceForUsers(uId, peerIds);
+
+    return res.rows.map((row) => {
+      const p = presenceMap[String(row.id)];
+      const isVerified = Boolean(row.org_verified || row.user_verified);
+      return {
+        id: row.id,
+        name: row.org_name || row.full_name || 'User',
+        username: row.username || 'user',
+        photoUrl: row.org_logo || row.avatar_url || '',
+        avatar_url: row.org_logo || row.avatar_url || '',
+        bio: row.bio || 'KnotNex Community Member',
+        role: row.role || 'user',
+        isOrganization: !!row.org_name || row.role === 'org',
+        is_online: p?.isOnline ?? false,
+        isOnline: p?.isOnline ?? false,
+        last_seen_at: p?.lastSeenAt ?? null,
+        lastSeenAt: p?.lastSeenAt ?? null,
+        is_verified: isVerified,
+        isVerified,
+      };
+    });
   }
 
   /**
@@ -1087,9 +871,7 @@ export class ChatService {
     const otherUserId = conv.participant_one === uId ? conv.participant_two : conv.participant_one;
     const io = getSocketIO();
     if (io) {
-      io.to(`user:${otherUserId}`).emit('request_accepted', { conversationId: conv.id });
-      io.to(`conversation_${conv.id}`).emit('request_accepted', { conversationId: conv.id });
-      io.to(`user:${uId}`).emit('request_accepted', { conversationId: conv.id });
+      io.to(`user:${otherUserId}`).to(`user:${uId}`).emit('request_accepted', { conversationId: conv.id });
     }
     return conv;
   }
@@ -1116,8 +898,7 @@ export class ChatService {
     const otherUserId = conv.participant_one === uId ? conv.participant_two : conv.participant_one;
     const io = getSocketIO();
     if (io) {
-      io.to(`user:${otherUserId}`).emit('request_rejected', { conversationId: conv.id });
-      io.to(`conversation_${conv.id}`).emit('request_rejected', { conversationId: conv.id });
+      io.to(`user:${otherUserId}`).to(`user:${uId}`).emit('request_rejected', { conversationId: conv.id });
     }
     return conv;
   }
@@ -1157,9 +938,18 @@ export class ChatService {
     const uId = (await this.resolveUserUuid(userId)) || userId;
     await query(
       `UPDATE conversations 
-       SET deleted_by = array_append(COALESCE(deleted_by, '{}'), $1), updated_at = NOW() 
+       SET deleted_by = array_append(array_remove(COALESCE(deleted_by, '{}'), $1), $1), updated_at = NOW() 
        WHERE id = $2`,
       [uId, conversationId]
+    );
+    await query(
+      `INSERT INTO conversation_participants (conversation_id, user_id, is_deleted, unread_count, updated_at)
+       VALUES ($1, $2, TRUE, 0, NOW())
+       ON CONFLICT (conversation_id, user_id) DO UPDATE SET
+         is_deleted = TRUE,
+         unread_count = 0,
+         updated_at = NOW()`,
+      [conversationId, uId]
     );
     return { success: true };
   }
@@ -1178,9 +968,11 @@ export class ChatService {
             u.email, 
             u.avatar_url, 
             u.role,
+            COALESCE(u.is_verified, FALSE) AS user_verified,
             up.bio,
             org.name AS org_name,
-            org.logo_url AS org_logo
+            org.logo_url AS org_logo,
+            COALESCE(org.is_verified, FALSE) AS org_verified
          FROM users u
          LEFT JOIN user_profiles up ON up.user_id = u.id
          LEFT JOIN organizations org ON org.owner_id = u.id
@@ -1196,18 +988,29 @@ export class ChatService {
         [uId, limit]
       );
 
-      return res.rows.map(row => ({
-        id: row.id,
-        name: row.org_name || row.name || 'KnotNex Member',
-        username: row.username || 'user',
-        email: row.email || '',
-        photoUrl: row.org_logo || row.avatar_url || '',
-        avatar_url: row.org_logo || row.avatar_url || '',
-        bio: row.bio || 'KnotNex Community Member',
-        role: row.role || 'User',
-        is_online: true,
-        is_verified: true,
-      }));
+      const peerIds = res.rows.map((r) => String(r.id));
+      const presenceMap = await PresenceService.getPresenceForUsers(uId, peerIds);
+
+      return res.rows.map((row) => {
+        const p = presenceMap[String(row.id)];
+        const isVerified = Boolean(row.org_verified || row.user_verified);
+        return {
+          id: row.id,
+          name: row.org_name || row.name || 'KnotNex Member',
+          username: row.username || 'user',
+          email: row.email || '',
+          photoUrl: row.org_logo || row.avatar_url || '',
+          avatar_url: row.org_logo || row.avatar_url || '',
+          bio: row.bio || 'KnotNex Community Member',
+          role: row.role || 'User',
+          is_online: p?.isOnline ?? false,
+          isOnline: p?.isOnline ?? false,
+          last_seen_at: p?.lastSeenAt ?? null,
+          lastSeenAt: p?.lastSeenAt ?? null,
+          is_verified: isVerified,
+          isVerified,
+        };
+      });
     } catch (e: any) {
       logger.warn('[ChatService.discoverUsers] Error: ' + e.message);
       return [];

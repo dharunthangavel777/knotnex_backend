@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { UploadService } from '../services/upload.service';
+import { ChatUploadController } from './chat-upload.controller';
 import { ApiResponse } from '../utils/response.util';
 import fs from 'fs';
 import path from 'path';
@@ -13,6 +14,13 @@ export class UploadController {
       }
 
       const folder = (req.body.folder as string) || 'images';
+      const isPrivateChat =
+        req.body.isPublic === false || req.body.isPublic === 'false' || folder.startsWith('chat');
+      if (isPrivateChat) {
+        req.body.attachmentType = 'image';
+        return ChatUploadController.uploadChatMedia(req, res);
+      }
+
       const result = await UploadService.uploadMedia(req.file, folder, true);
       return ApiResponse.success(res, result, 'Image uploaded successfully');
     } catch (error: any) {
@@ -27,6 +35,13 @@ export class UploadController {
       }
 
       const folder = (req.body.folder as string) || 'videos';
+      const isPrivateChat =
+        req.body.isPublic === false || req.body.isPublic === 'false' || folder.startsWith('chat');
+      if (isPrivateChat) {
+        req.body.attachmentType = 'video';
+        return ChatUploadController.uploadChatMedia(req, res);
+      }
+
       const result = await UploadService.uploadMedia(req.file, folder, true);
       return ApiResponse.success(res, result, 'Video uploaded successfully');
     } catch (error: any) {
@@ -41,6 +56,13 @@ export class UploadController {
       }
 
       const folder = (req.body.folder as string) || 'documents';
+      const isPrivateChat =
+        req.body.isPublic === false || req.body.isPublic === 'false' || folder.startsWith('chat');
+      if (isPrivateChat) {
+        req.body.attachmentType = 'document';
+        return ChatUploadController.uploadChatMedia(req, res);
+      }
+
       // Documents (e.g. resumes, certificates) default to private storage
       const result = await UploadService.uploadMedia(req.file, folder, false);
       return ApiResponse.success(res, result, 'Document uploaded successfully');
@@ -51,6 +73,9 @@ export class UploadController {
 
   static async getSignedUploadUrl(req: Request, res: Response) {
     try {
+      const handledPrivate = await ChatUploadController.handleSignedUploadUrlRequest(req, res);
+      if (handledPrivate) return;
+
       const { fileName, contentType, folder = 'posts', isPublic = true } = req.body;
       if (!fileName || !contentType) {
         return ApiResponse.error(res, 'fileName and contentType are required', 400);
@@ -112,6 +137,16 @@ export class UploadController {
     try {
       const filePath = req.query.path as string;
       if (!filePath) return ApiResponse.error(res, 'File path query required', 400);
+
+      // Private chat paths require attachment-level participant authorization via /chat/attachments/:id/signed-url
+      if (filePath.includes('..') || filePath.startsWith('chat/')) {
+        return ApiResponse.error(
+          res,
+          'Use authorized chat attachment endpoints to access private chat media',
+          403,
+          'FORBIDDEN'
+        );
+      }
 
       const url = await UploadService.getPrivateSignedUrl(filePath);
       return ApiResponse.success(res, { url });
