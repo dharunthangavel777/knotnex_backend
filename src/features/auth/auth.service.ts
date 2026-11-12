@@ -45,7 +45,7 @@ async function buildTokens(user: AuthUser): Promise<AuthTokens> {
     email: user.email,
     role: user.role,
   });
-  return { accessToken, refreshToken, expiresIn: 15 * 60 }; // 15 min
+  return { accessToken, refreshToken, expiresIn: 24 * 60 * 60 }; // 24 hours
 }
 
 // ─── Helper: map DB row to AuthUser ─────────────────────────────────────────
