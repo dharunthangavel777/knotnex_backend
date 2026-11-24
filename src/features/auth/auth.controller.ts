@@ -13,7 +13,9 @@ export class AuthController {
       return ApiResponse.success(res, result, result.message);
     } catch (error: any) {
       logger.warn('[AuthController] initiateSignup error', { error: error.message });
-      return ApiResponse.error(res, error.message, 400, 'SIGNUP_INITIATE_FAILED');
+      const status = error.statusCode || 400;
+      const code = error.code || 'SIGNUP_INITIATE_FAILED';
+      return ApiResponse.error(res, error.message, status, code);
     }
   }
 
@@ -25,7 +27,9 @@ export class AuthController {
       return ApiResponse.success(res, result, result.message);
     } catch (error: any) {
       logger.warn('[AuthController] verifySignupOtp error', { error: error.message });
-      return ApiResponse.error(res, error.message, 400, 'OTP_VERIFICATION_FAILED');
+      const status = error.statusCode || 400;
+      const code = error.code || 'OTP_VERIFICATION_FAILED';
+      return ApiResponse.error(res, error.message, status, code);
     }
   }
 
@@ -43,7 +47,9 @@ export class AuthController {
       return ApiResponse.created(res, result, 'Account created successfully. Welcome to Knotnex!');
     } catch (error: any) {
       logger.warn('[AuthController] completeSignup error', { error: error.message });
-      return ApiResponse.error(res, error.message, 400, 'SIGNUP_FAILED');
+      const status = error.statusCode || 400;
+      const code = error.code || 'SIGNUP_FAILED';
+      return ApiResponse.error(res, error.message, status, code);
     }
   }
 

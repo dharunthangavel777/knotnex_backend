@@ -80,13 +80,19 @@ export class AuthService {
   static async initiateSignup(data: InitiateSignupData) {
     const email = data.email.toLowerCase().trim();
 
-    // Check if email already registered
+    // Check if email already registered with an active password
     const existing = await query(
-      'SELECT id FROM users WHERE email = $1 LIMIT 1',
+      'SELECT id, password_hash, is_verified FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',
       [email]
     );
     if (existing.rowCount && existing.rowCount > 0) {
-      throw new Error('An account with this email already exists. Please sign in.');
+      const existingUser = existing.rows[0];
+      if (existingUser.password_hash) {
+        throw new AuthError('An account with this email already exists. Please sign in.', 409, 'USER_ALREADY_EXISTS');
+      }
+      // If user exists without a password (incomplete signup, admin-seeded, etc.),
+      // allow initiateSignup to send OTP so the user can complete setup and set their password!
+      logger.info(`[AuthService] Incomplete account detected without password for ${email}. Allowing OTP initiation to activate account.`);
     }
 
     const otp = await createOtp(email, 'SIGNUP');
@@ -177,6 +183,10 @@ export class AuthService {
     if (!fullName || fullName === 'Knotnex User') {
       const emailPrefix = email.split('@')[0];
       fullName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+    }
+
+    if (!password && !firebaseIdToken) {
+      throw new AuthError('A password is required to complete account registration.', 400, 'PASSWORD_REQUIRED');
     }
 
     const passwordHash = password ? await bcrypt.hash(password, 10) : null;
@@ -382,9 +392,9 @@ export class AuthService {
 
       if (!dbUser.password_hash) {
         throw new AuthError(
-          'This account was created with Google Sign-In. Please sign in using Google or reset your password.',
+          'No password is set for this account. Please use Forgot Password to set your password.',
           400,
-          'OAUTH_ACCOUNT_DETECTED'
+          'NO_PASSWORD_SET'
         );
       }
 
@@ -476,9 +486,9 @@ export class AuthService {
   static async forgotPassword(email: string) {
     const normalized = email.toLowerCase().trim();
 
-    // Check email exists
+    // Check email exists (case-insensitive)
     const res = await query(
-      'SELECT id FROM users WHERE email = $1 LIMIT 1',
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',
       [normalized]
     );
 
@@ -509,9 +519,9 @@ export class AuthService {
 
     await verifyOtp(normalized, 'PASSWORD_RESET', otp);
 
-    // Look up user for reset token
+    // Look up user for reset token (case-insensitive)
     const res = await query(
-      'SELECT id FROM users WHERE email = $1 LIMIT 1',
+      'SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',
       [normalized]
     );
 
@@ -571,10 +581,10 @@ export class AuthService {
       }
     }
 
-    // Update password_hash in PostgreSQL
+    // Update password_hash in PostgreSQL and set is_verified to true
     const newHash = await bcrypt.hash(newPassword, 10);
     await query(
-      `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`,
+      `UPDATE users SET password_hash = $1, is_verified = true, updated_at = NOW() WHERE id = $2`,
       [newHash, payload.userId]
     );
 
