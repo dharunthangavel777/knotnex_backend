@@ -292,9 +292,10 @@ export class ChatUploadController {
           }
 
           // Public non-chat upload via authenticated UploadService
+          const requestedFolder = String(req.query.folder || (rawKey.includes('/') ? rawKey.split('/')[0] : 'posts'));
           const safeFolder = sanitizeFolder(
-            rawKey.includes('/') ? rawKey.split('/')[0] : 'media',
-            'media'
+            requestedFolder,
+            'posts'
           );
           const pseudoFile = {
             fieldname: 'file',
@@ -307,7 +308,7 @@ export class ChatUploadController {
           const result = await UploadService.uploadMedia(pseudoFile, safeFolder, true);
           return ApiResponse.success(res, result, 'Media uploaded');
         } catch (innerErr: any) {
-          const code = innerErr.statusCode || 400;
+          const code = innerErr.statusCode || (innerErr.status ? Number(innerErr.status) : 500);
           return res.status(code).json({
             success: false,
             error: { code: 'DIRECT_PUT_FAILED', message: innerErr.message || 'Direct upload failed' },

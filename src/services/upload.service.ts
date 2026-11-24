@@ -1,14 +1,32 @@
 import { CloudStorageIntegration } from '../integrations/gcp/cloud-storage.gcp';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import fs from 'fs';
+import { logger } from '../config/logger';
 
 export class UploadService {
   static async uploadMedia(file: Express.Multer.File, folder: string = 'media', isPublic: boolean = true) {
-    const ext = path.extname(file.originalname);
+    const ext = path.extname(file.originalname) || '.jpg';
     const fileName = `${uuidv4()}${ext}`;
     const destination = `${folder}/${fileName}`;
 
-    const url = await CloudStorageIntegration.uploadFile(file.buffer, destination, file.mimetype, isPublic);
+    let url: string;
+    try {
+      url = await CloudStorageIntegration.uploadFile(file.buffer, destination, file.mimetype, isPublic);
+    } catch (gcsErr: any) {
+      logger.warn('[UploadService] GCS upload failed, falling back to local disk storage', {
+        error: gcsErr.message,
+        destination,
+      });
+      // Fallback: save to local uploads directory (statically served by Express)
+      const uploadDir = path.join(process.cwd(), 'uploads', folder);
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      const localFilePath = path.join(uploadDir, fileName);
+      fs.writeFileSync(localFilePath, file.buffer);
+      url = `/uploads/${folder}/${fileName}`;
+    }
 
     return {
       fileName,
