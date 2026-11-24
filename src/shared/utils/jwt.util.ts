@@ -8,7 +8,7 @@ import { logger } from '../../config/logger';
 // restore ioredis, redis.ts, and connect the Redis branches below.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ACCESS_TOKEN_TTL = '15m';
+const ACCESS_TOKEN_TTL = '24h';
 const REFRESH_TOKEN_TTL = '30d';
 const REFRESH_TOKEN_TTL_MS = 60 * 60 * 24 * 30 * 1000; // 30 days in ms
 const REGISTRATION_TOKEN_TTL = '15m';
