@@ -1,4 +1,5 @@
-import { mediaBucket, privateBucket } from '../../config/storage';
+import { mediaBucket, privateBucket, adcStorage } from '../../config/storage';
+import { config } from '../../config';
 import { logger } from '../../config/logger';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -9,6 +10,7 @@ export class CloudStorageIntegration {
     mimeType: string,
     isPublic: boolean = true
   ): Promise<string> {
+    const bucketName = isPublic ? config.gcs.mediaBucket : config.gcs.privateBucket;
     const bucket = isPublic ? mediaBucket : privateBucket;
     const file = bucket.file(destinationPath);
 
@@ -26,9 +28,39 @@ export class CloudStorageIntegration {
 
       // Private files return bucket path, accessible via signed URL
       return `gs://${bucket.name}/${destinationPath}`;
-    } catch (error: any) {
-      logger.error('Failed to upload file to Cloud Storage', { destinationPath, error: error.message });
-      throw error;
+    } catch (primaryError: any) {
+      logger.warn('[CloudStorageIntegration] Primary storage upload failed, attempting Cloud Run ADC fallback', {
+        destinationPath,
+        error: primaryError.message,
+      });
+
+      // Attempt fallback using Cloud Run native Application Default Credentials (ADC)
+      try {
+        const fallbackBucket = adcStorage.bucket(bucketName);
+        const fallbackFile = fallbackBucket.file(destinationPath);
+        await fallbackFile.save(fileBuffer, {
+          metadata: {
+            contentType: mimeType,
+          },
+          resumable: false,
+        });
+
+        logger.info('[CloudStorageIntegration] Upload succeeded via Cloud Run ADC fallback', {
+          destinationPath,
+        });
+
+        if (isPublic) {
+          return `https://storage.googleapis.com/${bucketName}/${destinationPath}`;
+        }
+        return `gs://${bucketName}/${destinationPath}`;
+      } catch (adcError: any) {
+        logger.error('Failed to upload file to Cloud Storage (both primary and ADC failed)', {
+          destinationPath,
+          primaryError: primaryError.message,
+          adcError: adcError.message,
+        });
+        throw primaryError;
+      }
     }
   }
 

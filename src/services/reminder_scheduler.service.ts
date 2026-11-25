@@ -111,7 +111,7 @@ export class ReminderSchedulerService {
   private static async process2HourEventReminders() {
     try {
       const res = await query(
-        `SELECT r.id as registration_id, r.user_id, e.id as event_id, e.title as event_title, e.venue
+        `SELECT r.id as registration_id, r.user_id, e.id as event_id, e.title as event_title, e.venue_name as venue
          FROM event_registrations r
          JOIN events e ON r.event_id = e.id
          WHERE r.status = 'confirmed'

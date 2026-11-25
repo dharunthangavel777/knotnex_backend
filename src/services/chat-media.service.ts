@@ -5,7 +5,7 @@ import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { query } from '../config/database';
 import { config } from '../config';
-import { privateBucket, mediaBucket } from '../config/storage';
+import { privateBucket, mediaBucket, adcStorage } from '../config/storage';
 import { logger } from '../config/logger';
 import {
   ChatMediaKind,
@@ -120,10 +120,29 @@ export class ChatMediaService {
         },
       });
     } catch (gcsErr: any) {
-      logger.warn(`[ChatMediaService] privateBucket upload failed, using local_private disk: ${gcsErr.message}`);
-      storageProvider = 'local_private';
-      const diskPath = ensurePrivateDirFor(storagePath);
-      fs.writeFileSync(diskPath, params.buffer);
+      // Attempt ADC fallback before local disk
+      try {
+        const fallbackFile = adcStorage.bucket(config.gcs.privateBucket).file(storagePath);
+        await fallbackFile.save(params.buffer, {
+          resumable: false,
+          metadata: {
+            contentType: mime,
+            cacheControl: 'private, max-age=300',
+            metadata: {
+              uploaderId: params.uploaderId,
+              assetId,
+              originalFilename: cleanName,
+            },
+          },
+        });
+        storageProvider = 'gcs_private';
+        logger.info(`[ChatMediaService] privateBucket upload succeeded via Cloud Run ADC fallback: ${storagePath}`);
+      } catch (adcErr: any) {
+        logger.warn(`[ChatMediaService] privateBucket upload failed, using local_private disk: ${gcsErr.message}`);
+        storageProvider = 'local_private';
+        const diskPath = ensurePrivateDirFor(storagePath);
+        fs.writeFileSync(diskPath, params.buffer);
+      }
     }
 
     await this.upsertAssetRecord({
