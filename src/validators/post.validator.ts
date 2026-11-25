@@ -17,6 +17,8 @@ export const createPostSchema = z.object({
     taggedUsers:   z.array(z.string()).default([]),
     allowComments: z.boolean().default(true),
     allowReposts:  z.boolean().default(true),
+    aspectRatio:   z.number().nullable().optional(),
+    aspect_ratio:  z.number().nullable().optional(),
   }).refine((data) => {
     const text = data.caption || data.content;
     const hasMedia = (data.mediaUrls && data.mediaUrls.length > 0) || (data.media_urls && data.media_urls.length > 0);
