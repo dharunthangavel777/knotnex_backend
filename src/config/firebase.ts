@@ -7,14 +7,20 @@ import { logger } from './logger';
 let firebaseApp: admin.app.App;
 
 try {
+  const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    (process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim().startsWith('{')
+      ? process.env.FIREBASE_SERVICE_ACCOUNT_KEY.trim()
+      : null);
+
   const keyPath = path.resolve(process.cwd(), config.firebase.serviceAccountKey);
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+
+  if (rawJson) {
+    const serviceAccount = JSON.parse(rawJson);
     firebaseApp = admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
       projectId: config.firebase.projectId,
     });
-    logger.info('Firebase Admin SDK initialized from FIREBASE_SERVICE_ACCOUNT_JSON env variable');
+    logger.info('Firebase Admin SDK initialized from service account JSON env variable');
   } else if (fs.existsSync(keyPath)) {
     const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf8'));
     firebaseApp = admin.initializeApp({

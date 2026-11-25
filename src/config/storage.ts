@@ -20,15 +20,20 @@ if (process.env.GCS_SERVICE_ACCOUNT_JSON) {
   }
 }
 
-if (!credentials && process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+const rawFirebaseJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+  (process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim().startsWith('{')
+    ? process.env.FIREBASE_SERVICE_ACCOUNT_KEY.trim()
+    : null);
+
+if (!credentials && rawFirebaseJson) {
   try {
-    const parsed = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    const parsed = JSON.parse(rawFirebaseJson);
     if (parsed.client_email && parsed.private_key) {
       credentials = parsed;
-      credentialSource = `FIREBASE_SERVICE_ACCOUNT_JSON (${parsed.client_email})`;
+      credentialSource = `FIREBASE_SERVICE_ACCOUNT (${parsed.client_email})`;
     }
   } catch (err: any) {
-    logger.warn('[Storage] Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON: ' + err.message);
+    logger.warn('[Storage] Failed to parse Firebase service account JSON: ' + err.message);
   }
 }
 
