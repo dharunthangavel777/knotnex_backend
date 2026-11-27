@@ -83,23 +83,14 @@ const resolveUserOrgId = async (userId: string): Promise<string | undefined> => 
           logger.warn(`[AuthMiddleware] DB query note: ${dbErr.message}`);
         }
 
-        // Fallback for verified platform admin tokens to prevent spurious 401s during DB cold-starts or network spikes
-        if (!dbUser && decoded.role === UserRole.ADMIN) {
+        // Fallback for verified tokens to prevent spurious 401s during DB cold-starts, connection pool reconnects or spikes
+        if (!dbUser && (decoded.sub || decoded.email)) {
+          logger.warn(`[AuthMiddleware] Authenticating user (${decoded.email || decoded.sub}) directly from cryptographically verified JWT payload`);
           dbUser = {
             id: decoded.sub,
-            firebase_uid: decoded.uid || `admin_${decoded.email?.split('@')[0]}`,
-            email: decoded.email,
-            role: UserRole.ADMIN,
-            is_verified: true,
-            is_banned: false,
-          };
-        } else if (!dbUser && config.env === 'development') {
-          logger.warn('[AuthMiddleware] DB user not found, authenticating from signed JWT payload (dev)');
-          dbUser = {
-            id: decoded.sub,
-            firebase_uid: decoded.uid,
-            email: decoded.email,
-            role: decoded.role,
+            firebase_uid: decoded.uid || `user_${decoded.sub}`,
+            email: decoded.email || `${decoded.sub}@knotnex.user`,
+            role: decoded.role || UserRole.USER,
             is_verified: true,
             is_banned: false,
           };
